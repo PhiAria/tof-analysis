@@ -960,6 +960,16 @@ class TOFExplorer(QMainWindow):
         dg.addWidget(QLabel("Work function (eV):"))
         dg.addWidget(self.spin_view_workfunc)
 
+        self.cmap_combo = QComboBox()
+        cmap_list = GLOBAL_SETTINGS["ui"]["colormaps"]
+        self. cmap_combo.addItems(cmap_list)
+        current_cmap = GLOBAL_SETTINGS["plots"].get("Raw Avg", {}).get("cmap", "viridis")
+        if current_cmap in cmap_list:
+            self.cmap_combo.setCurrentText(current_cmap)
+        self.cmap_combo.currentIndexChanged.connect(self._on_cmap_changed)
+        dg.addWidget(QLabel("Colormap:"))
+        dg.addWidget(self.cmap_combo)
+        
         display_group.setLayout(dg)
         v.addWidget(display_group)
 
@@ -990,6 +1000,13 @@ class TOFExplorer(QMainWindow):
         self.spin_cmin.setSingleStep(0.01)
         self.spin_cmin.valueChanged.connect(self._on_color_limit_changed)
 
+
+        def _on_cmap_changed(self):
+            new_cmap = self.cmap_combo. currentText()
+            GLOBAL_SETTINGS["plots"]["Raw Avg"]["cmap"] = new_cmap
+            save_settings(GLOBAL_SETTINGS)
+            self.update_plot()
+        
         self.spin_cmax = QDoubleSpinBox()
         self.spin_cmax.setDecimals(3)
         self.spin_cmax.setRange(-1e12, 1e12)
