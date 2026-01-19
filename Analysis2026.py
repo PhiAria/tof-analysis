@@ -1,10 +1,3 @@
-# Analysis2026.py
-# Viewer + Analysis window
-# Fixes:
-#  - Proper numeric TOF file sorting (prevents periodic bad rows)
-#  - Reader aligned with old OnlineAnalysis.py (pd.read_table sep=' ' + fallback)
-#  - KE/BE axis switching resets X limits to the correct unit range (prevents blank plot / locked limits)
-
 import sys
 import os
 import glob
@@ -34,9 +27,6 @@ from PyQt5.QtCore import Qt, QThread, pyqtSignal, QTimer
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
-# ---------------------------
-# Persistence and defaults
-# ---------------------------
 CONFIG_PATH = os.path.join(os.path.expanduser("~"), ".tof_explorer_config.json")
 
 DEFAULT_SETTINGS = {
@@ -115,9 +105,7 @@ def _safe_float(value, default=0.0):
 
 GLOBAL_SETTINGS = load_settings()
 
-# ---------------------------
-# Physical constants / helpers
-# ---------------------------
+
 class PhysicalConstants:
     ELECTRON_MASS = 9.1093837e-31
     ELEMENTARY_CHARGE = 1.602176634e-19
@@ -179,7 +167,6 @@ class FastLoader(QThread):
         return 0
 
     def _read_tof_like_old(self, fpath):
-        # Old app: pd.read_table(File, comment='#', sep=' ', header=None)
         try:
             df = pd.read_table(fpath, comment="#", sep=" ", header=None, engine="python")
             return df
@@ -790,13 +777,11 @@ class AnalysisWindow(QMainWindow):
             self.figure.tight_layout()
             self._artists_initialized = True
 
-        # visibility
         for name in self.ALL_PLOTS:
             art = self._plot_artists.get(name)
             if art:
                 art["ax"].set_visible(self.chk_plots[name].isChecked())
 
-        # update
         for name in self.ALL_PLOTS:
             if not self.chk_plots[name].isChecked():
                 continue
@@ -1165,7 +1150,6 @@ class TOFExplorer(QMainWindow):
         self.data = data
         self.btn_analyze.setEnabled(True)
 
-        # init limits in TOF first, then adjust for current axis mode
         self._init_spinboxes()
         self._axis_mode_changed(force=True)
 
