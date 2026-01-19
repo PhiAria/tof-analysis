@@ -1203,14 +1203,107 @@ class TOFExplorer(QMainWindow):
         else:
             self.watch_timer.stop()
 
-    def _poll_folder(self):
-        if not self.folder:
-            return
-        cur = sorted(glob.glob(os.path.join(self.folder, "TOF*.dat")))
-        if cur != self.last_file_list:
-            logger.info("Folder changed; reloading")
+        def _poll_folder(self):
+            if not self.folder:
+                return
+            cur = sorted(glob.glob(os.path. join(self.folder, "TOF*.dat")))
+        
+            # Log every poll attempt
+            logger.info(f"Auto-watch:  Checking folder (found {len(cur)} files)")
+        
+            if cur != self. last_file_list:
+                new_files = [f for f in cur if f not in self. last_file_list]
+                removed_files = [f for f in self.last_file_list if f not in cur]
+            
+                if removed_files: 
+                    logger.info(f"Files removed:  {len(removed_files)}; full reload")
+                    self._start_loading(self.folder)
+                    self.last_file_list = cur
+                elif new_files:
+                    logger.info(f"New files detected: {len(new_files)}; appending")
+                    logger.info(f"New files:  {[os.path.basename(f) for f in new_files]}")
+                    self._append_new_files(new_files)
+                    self.last_file_list = cur
+                else:
+                    logger. info("Files changed; full reload")
+                    self._start_loading(self.folder)
+                    self. last_file_list = cur
+            else:
+                logger.info("Auto-watch: No changes detected")
+
+        def _append_new_files(self, new_file_paths):
+        """Incrementally load and append new TOF files to existing data"""
+        if not self.data:
             self._start_loading(self.folder)
-            self.last_file_list = cur
+            return
+        
+        try:
+            self.progress_label.setText(f"Loading {len(new_file_paths)} new files...")
+            self.pbar.setValue(10)
+            
+            loader = FastLoader(self.folder)
+            analog_list = []
+            counting_list = []
+            
+            for i, fpath in enumerate(new_file_paths):
+                try:
+                    df = loader._read_tof_like_old(fpath)
+                    if df. shape[1] < 2:
+                        logger.warning(f"{fpath} has fewer than 2 columns — skipping")
+                        continue
+                    analog_list.append(df. iloc[:, 1]. to_numpy())
+                    if df.shape[1] > 2:
+                        counting_list. append(df.iloc[:, 2].to_numpy())
+                    else:
+                        counting_list. append(np.zeros_like(self.data["tof"]))
+                except Exception as e:
+                    logger.warning(f"Failed to parse {fpath}: {e} — skipping")
+                    continue
+                
+                self.pbar.setValue(int(10 + 40 * (i + 1) / len(new_file_paths)))
+            
+            if not analog_list:
+                logger. warning("No valid new files to append")
+                self.progress_label.setText("Idle")
+                self.pbar.setValue(100)
+                return
+            
+            new_analog = np.vstack(analog_list)
+            new_counting = np. vstack(counting_list)
+            
+            self.pbar.setValue(60)
+            
+            self.data["analog"] = np. vstack([self.data["analog"], new_analog])
+            self.data["counting"] = np.vstack([self.data["counting"], new_counting])
+            
+            self.pbar.setValue(80)
+            
+            cache_file = os.path.join(self.folder, "processed_cache.npz")
+            np.savez_compressed(
+                cache_file,
+                tof=self.data["tof"],
+                analog=self.data["analog"],
+                counting=self.data["counting"]
+            )
+            
+            self.pbar.setValue(90)
+            
+            n_files = self.data["analog"].shape[0]
+            self.spin_ymax.blockSignals(True)
+            self.spin_ymax.setMaximum(n_files)
+            self.spin_ymax. setValue(n_files)
+            self.spin_ymax.blockSignals(False)
+            
+            self.update_plot()
+            
+            self.pbar.setValue(100)
+            self.progress_label.setText(f"Idle (+{len(new_file_paths)} files)")
+            logger.info(f"Successfully appended {len(new_file_paths)} new files")
+            
+        except Exception as e: 
+            logger.exception("Failed to append new files")
+            self.progress_label.setText("Error appending files")
+            QMessageBox.warning(self, "Append Error", f"Failed to append new files: {e}\n\nTry full reload.")
 
     def update_plot(self):
         if not self.data or self._updating:
