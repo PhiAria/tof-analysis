@@ -999,13 +999,6 @@ class TOFExplorer(QMainWindow):
         self.spin_cmin.setRange(-1e12, 1e12)
         self.spin_cmin.setSingleStep(0.01)
         self.spin_cmin.valueChanged.connect(self._on_color_limit_changed)
-
-
-        def _on_cmap_changed(self):
-            new_cmap = self.cmap_combo. currentText()
-            GLOBAL_SETTINGS["plots"]["Raw Avg"]["cmap"] = new_cmap
-            save_settings(GLOBAL_SETTINGS)
-            self.update_plot()
         
         self.spin_cmax = QDoubleSpinBox()
         self.spin_cmax.setDecimals(3)
@@ -1124,6 +1117,14 @@ class TOFExplorer(QMainWindow):
 
     def _on_view_calib_changed(self):
         self._calib_debounce_timer.start(200)
+
+
+    def _on_cmap_changed(self):
+        """Handle colormap selection change"""
+        new_cmap = self.cmap_combo.currentText()
+        GLOBAL_SETTINGS["plots"]["Raw Avg"]["cmap"] = new_cmap
+        save_settings(GLOBAL_SETTINGS)
+        self.update_plot()
 
     def _apply_view_calib(self):
         GLOBAL_SETTINGS["calibration"]["TOF_OFFSET_NS"] = _safe_float(self.spin_view_tof_offset.value())
