@@ -31,9 +31,9 @@ CONFIG_PATH = os.path.join(os.path.expanduser("~"), ".tof_explorer_config.json")
 
 DEFAULT_SETTINGS = {
     "calibration": {
-        "TOF_OFFSET_NS": 0.0,
-        "WORK_FUNCTION_EV": 0.0,
-        "FLIGHT_DISTANCE_M": 0.768,
+        "TOF_OFFSET_NS":  16.0,  # t0 from notebook
+        "WORK_FUNCTION_EV": 0.5,  # E0 from notebook (0.5*el / el = 0.5 eV)
+        "FLIGHT_DISTANCE_M": 0.768,  # L from notebook (Johan's thesis)
     },
     "plots": {
         "Raw Avg": {"cmap": "viridis", "vmin": 0.0, "vmax": 0.4,
