@@ -577,17 +577,24 @@ class AnalysisWindow(QMainWindow):
     def _setup_ui(self):
         central = QWidget()
         self.setCentralWidget(central)
-        layout = QHBoxLayout(central)
+        main_layout = QHBoxLayout(central)
+        
+        # LEFT PANEL:  controls
         controls = self._create_controls()
-        layout.addLayout(controls, 1)
-
+        main_layout.addLayout(controls, 1)
+        
+        # CENTER:  matplotlib canvas
         self.figure = plt.figure(figsize=(12, 10))
         self.canvas = FigureCanvas(self.figure)
         self.canvas.mpl_connect("scroll_event", self.on_scroll)
         self.canvas.mpl_connect("button_press_event", self.on_press)
-        self.canvas.mpl_connect("motion_notify_event", self.on_motion)
+        self.canvas.mpl_connect("motion_notify_event", self. on_motion)
         self.canvas.mpl_connect("button_release_event", self.on_release)
-        layout.addWidget(self.canvas, 4)
+        main_layout.addWidget(self. canvas, 4)
+        
+        # RIGHT PANEL: plot customization
+        customize_panel = self._create_customize_panel()
+        main_layout.addLayout(customize_panel, 1)
 
     def _create_controls(self):
         v = QVBoxLayout()
@@ -598,9 +605,9 @@ class AnalysisWindow(QMainWindow):
         self.spin_l0 = QDoubleSpinBox()
         self.spin_l0.setRange(-1000, 1000)
         self.spin_l0.setDecimals(6)
-        self.spin_l0.setValue(_safe_float(GLOBAL_SETTINGS["fit"].get("t0_fixed_mm", 142.298)))
+        self.spin_l0.setValue(_safe_float(GLOBAL_SETTINGS["fit"].get("t0_fixed_mm", 142.378)))
         p.addWidget(QLabel("l0 (mm):"), 0, 0)
-        p.addWidget(self.spin_l0, 0, 1)
+        p.addWidget(self. spin_l0, 0, 1)
 
         self.spin_nstart = QSpinBox()
         self.spin_nstart.setRange(0, 100000)
@@ -615,17 +622,17 @@ class AnalysisWindow(QMainWindow):
         p.addWidget(self.spin_nstop, 2, 1)
 
         self.model_combo = QComboBox()
-        self.model_combo.addItems(["one_exp", "two_exp", "two_exp1"])
+        self.model_combo. addItems(["one_exp", "two_exp", "two_exp1"])
         self.model_combo.setCurrentText("two_exp1")
-        p.addWidget(QLabel("Model:"), 3, 0)
-        p.addWidget(self.model_combo, 3, 1)
+        p.addWidget(QLabel("Model: "), 3, 0)
+        p.addWidget(self. model_combo, 3, 1)
 
         ncols = self.data["analog"].shape[1]
         self.spin_roi_min = QSpinBox()
-        self.spin_roi_min.setRange(0, max(0, ncols-1))
+        self.spin_roi_min. setRange(0, max(0, ncols-1))
         self.spin_roi_min.setValue(295 if ncols > 295 else 0)
         self.spin_roi_max = QSpinBox()
-        self.spin_roi_max.setRange(1, max(1, ncols))
+        self.spin_roi_max. setRange(1, max(1, ncols))
         self.spin_roi_max.setValue(310 if ncols > 310 else ncols)
         p.addWidget(QLabel("ROI col min:"), 4, 0)
         p.addWidget(self.spin_roi_min, 4, 1)
@@ -646,8 +653,22 @@ class AnalysisWindow(QMainWindow):
             pl.addWidget(cb)
         plots.setLayout(pl)
         v.addWidget(plots)
+
+        self.btn_run = QPushButton("Run Analysis")
+        self.btn_run.clicked.connect(self.run_analysis)
+        v.addWidget(self.btn_run)
+
+        self.status = QLabel("Ready")
+        self.status.setWordWrap(True)
+        v.addWidget(self.status)
+
+        v.addStretch()
+        return v
+    
+    def _create_customize_panel(self):
+        """Create the right-side plot customization panel"""
+        v = QVBoxLayout()
         
-        # Plot customization controls (similar to viewer window)
         customize = QGroupBox("Customize Selected Plot")
         cust_layout = QVBoxLayout()
         
@@ -655,7 +676,7 @@ class AnalysisWindow(QMainWindow):
         self.plot_select_combo = QComboBox()
         self.plot_select_combo.addItems(self.ALL_PLOTS)
         self.plot_select_combo.currentTextChanged.connect(self._on_plot_selected_for_custom)
-        cust_layout.addWidget(QLabel("Select Plot:"))
+        cust_layout. addWidget(QLabel("Select Plot:"))
         cust_layout.addWidget(self.plot_select_combo)
         
         # Colormap selector (for image plots only)
@@ -714,534 +735,18 @@ class AnalysisWindow(QMainWindow):
         limits_grid.addWidget(QLabel("Color max: "), 5, 0)
         limits_grid.addWidget(self.spin_plot_cmax, 5, 1)
         
-        cust_layout.addLayout(limits_grid)
+        cust_layout. addLayout(limits_grid)
         
         # Reset button
         self.btn_reset_plot = QPushButton("Reset to Auto")
         self.btn_reset_plot.clicked.connect(self._reset_plot_limits)
-        cust_layout. addWidget(self.btn_reset_plot)
+        cust_layout.addWidget(self.btn_reset_plot)
         
         customize.setLayout(cust_layout)
         v.addWidget(customize)
-
-
-        self.btn_run = QPushButton("Run Analysis")
-        self.btn_run.clicked.connect(self.run_analysis)
-        v.addWidget(self.btn_run)
-
-        self.status = QLabel("Ready")
-        self.status.setWordWrap(True)
-        v.addWidget(self.status)
-
         v.addStretch()
+        
         return v
-
-    def _create_expert_dock(self):
-        dock = QDockWidget("Expert (Analysis)", self)
-        w = QWidget()
-        layout = QVBoxLayout(w)
-
-        data_g = QGroupBox("Data / Sampling")
-        dg = QGridLayout()
-        self.spin_points_per_ns = QDoubleSpinBox()
-        self.spin_points_per_ns.setDecimals(6)
-        self.spin_points_per_ns.setRange(0.01, 1000)
-        self.spin_points_per_ns.setValue(_safe_float(GLOBAL_SETTINGS["data"].get("POINTS_PER_NS", 1.0/0.8)))
-        self.chk_bin_to_ns = QCheckBox("BIN_TO_NS_FLAG")
-        self.chk_bin_to_ns.setChecked(bool(GLOBAL_SETTINGS["data"].get("BIN_TO_NS_FLAG", False)))
-        dg.addWidget(QLabel("Points per ns:"), 0, 0)
-        dg.addWidget(self.spin_points_per_ns, 0, 1)
-        dg.addWidget(self.chk_bin_to_ns, 1, 0, 1, 2)
-        data_g.setLayout(dg)
-        layout.addWidget(data_g)
-
-        cal_g = QGroupBox("Calibration & Fit")
-        cl = QGridLayout()
-        self.spin_tof_offset = QDoubleSpinBox()
-        self.spin_tof_offset.setDecimals(6)
-        self.spin_tof_offset.setRange(-1000, 1000)
-        self.spin_tof_offset.setValue(_safe_float(GLOBAL_SETTINGS["calibration"]["TOF_OFFSET_NS"]))
-        self.spin_workfunc = QDoubleSpinBox()
-        self.spin_workfunc.setDecimals(4)
-        self.spin_workfunc.setRange(-10, 10)
-        self.spin_workfunc.setValue(_safe_float(GLOBAL_SETTINGS["calibration"]["WORK_FUNCTION_EV"]))
-        self.spin_flightdist = QDoubleSpinBox()
-        self.spin_flightdist.setDecimals(6)
-        self.spin_flightdist.setRange(0.0, 10.0)
-        self.spin_flightdist.setValue(_safe_float(GLOBAL_SETTINGS["calibration"]["FLIGHT_DISTANCE_M"]))
-        self.spin_t0_mm = QDoubleSpinBox()
-        self.spin_t0_mm.setDecimals(6)
-        self.spin_t0_mm.setRange(-1000, 1000)
-        self.spin_t0_mm.setValue(_safe_float(GLOBAL_SETTINGS["fit"].get("t0_fixed_mm", 142.298)))
-        self.chk_t0_optim = QCheckBox("t0 optimisation")
-        self.chk_t0_optim.setChecked(bool(GLOBAL_SETTINGS["fit"].get("t0_optimisation", False)))
-
-        cl.addWidget(QLabel("TOF offset (ns):"), 0, 0)
-        cl.addWidget(self.spin_tof_offset, 0, 1)
-        cl.addWidget(QLabel("Work function (eV):"), 1, 0)
-        cl.addWidget(self.spin_workfunc, 1, 1)
-        cl.addWidget(QLabel("Flight dist (m):"), 2, 0)
-        cl.addWidget(self.spin_flightdist, 2, 1)
-        cl.addWidget(QLabel("t0 (mm):"), 3, 0)
-        cl.addWidget(self.spin_t0_mm, 3, 1)
-        cl.addWidget(self.chk_t0_optim, 4, 0, 1, 2)
-        cal_g.setLayout(cl)
-        layout.addWidget(cal_g)
-
-        buttons = QHBoxLayout()
-        self.btn_apply = QPushButton("Apply")
-        self.btn_apply.clicked.connect(self._apply_expert)
-        self.btn_reset = QPushButton("Reset defaults")
-        self.btn_reset.clicked.connect(self._reset_expert)
-        self.btn_save_pdf = QPushButton("Save figure PDF")
-        self.btn_save_pdf.clicked.connect(self._save_pdf)
-        self.btn_export_npz = QPushButton("Export processed (.npz)")
-        self.btn_export_npz.clicked.connect(self._export_processed)
-        buttons.addWidget(self.btn_apply)
-        buttons.addWidget(self.btn_reset)
-        buttons.addWidget(self.btn_save_pdf)
-        buttons.addWidget(self.btn_export_npz)
-
-        layout.addLayout(buttons)
-        layout.addStretch()
-        dock.setWidget(w)
-        self.addDockWidget(Qt.RightDockWidgetArea, dock)
-
-    def _apply_expert(self):
-        GLOBAL_SETTINGS["data"]["POINTS_PER_NS"] = _safe_float(self.spin_points_per_ns.value())
-        GLOBAL_SETTINGS["data"]["BIN_TO_NS_FLAG"] = bool(self.chk_bin_to_ns.isChecked())
-        GLOBAL_SETTINGS["calibration"]["TOF_OFFSET_NS"] = _safe_float(self.spin_tof_offset.value())
-        GLOBAL_SETTINGS["calibration"]["WORK_FUNCTION_EV"] = _safe_float(self.spin_workfunc.value())
-        GLOBAL_SETTINGS["calibration"]["FLIGHT_DISTANCE_M"] = _safe_float(self.spin_flightdist.value())
-        GLOBAL_SETTINGS["fit"]["t0_fixed_mm"] = _safe_float(self.spin_t0_mm.value())
-        GLOBAL_SETTINGS["fit"]["t0_optimisation"] = bool(self.chk_t0_optim.isChecked())
-        save_settings(GLOBAL_SETTINGS)
-        QMessageBox.information(self, "Expert", "Settings applied and saved.")
-        if self.main_window is not None:
-            self.main_window.spin_view_tof_offset.setValue(_safe_float(GLOBAL_SETTINGS["calibration"]["TOF_OFFSET_NS"]))
-            self.main_window.spin_view_workfunc.setValue(_safe_float(GLOBAL_SETTINGS["calibration"]["WORK_FUNCTION_EV"]))
-            self.main_window._axis_mode_changed(force=True)
-            self.main_window.update_plot()
-
-    def _reset_expert(self):
-        for k in DEFAULT_SETTINGS:
-            GLOBAL_SETTINGS[k] = DEFAULT_SETTINGS[k]
-        save_settings(GLOBAL_SETTINGS)
-        QMessageBox.information(self, "Expert", "Settings reset to defaults. Restart app to fully reload defaults.")
-
-    def _save_pdf(self):
-        fname, _ = QFileDialog.getSaveFileName(self, "Save figure as PDF", "", "PDF files (*.pdf);;All files (*)")
-        if not fname:
-            return
-        if not fname.lower().endswith(".pdf"):
-            fname += ".pdf"
-        self.figure.savefig(fname, dpi=300, bbox_inches="tight")
-        QMessageBox.information(self, "Saved", f"Figure saved to {fname}")
-
-    def _export_processed(self):
-        if self._last_analysis is None:
-            QMessageBox.information(self, "No data", "Run analysis first")
-            return
-        fname, _ = QFileDialog.getSaveFileName(self, "Export processed arrays (.npz)", "", "NPZ files (*.npz);;All files (*)")
-        if not fname:
-            return
-        if not fname.lower().endswith(".npz"):
-            fname += ".npz"
-        res = self._last_analysis
-        np.savez_compressed(
-            fname,
-            t_fs=res["t_fs"],
-            tof=self.TOF,
-            fAVG=res["fAVG"],
-            fCNT=res["fCNT"],
-            rfCNT=res["rfCNT"],
-            S=res["S"],
-            fit_params=res["p"],
-        )
-        QMessageBox.information(self, "Saved", f"Processed arrays saved to {fname}")
-
-    def _on_plot_visibility_changed(self, state):
-        if self._last_analysis is not None:
-            self._create_or_update_artists(self._last_analysis)
-
-    def run_analysis(self):
-        if self._analysis_worker is not None and self._analysis_worker.isRunning():
-            QMessageBox.warning(self, "Busy", "Analysis is already running")
-            return
-
-        self.status. setText("Running analysis...")
-        self.btn_run.setEnabled(False)
-
-        # Don't calculate t_fs here - let worker load it from log.dat
-        params = {
-            "n_start": self.spin_nstart.value(),
-            "n_stop": self.spin_nstop.value(),
-            "roi_min": self.spin_roi_min.value(),
-            "roi_max": self.spin_roi_max.value(),
-            "edge_level": 30,
-            "model": self.model_combo.currentText(),
-            "fft": True,
-            "tof_arr": self.TOF,
-        }
-
-        self._analysis_worker = AnalysisWorker(self.folder, self.data, params)
-        self._analysis_worker.finished.connect(self._on_analysis_finished)
-        self._analysis_worker.start()
-
-    def _on_analysis_finished(self, result):
-        self.btn_run.setEnabled(True)
-        if "error" in result:
-            self.status. setText(f"Error: {result['error']}")
-            QMessageBox.critical(self, "Analysis Error", result["error"])
-            return
-        
-        self._last_analysis = result
-        
-        # Display fit results
-        if result. get("fit_success", False):
-            p = result["p"]
-            perr = result["perr"]
-            model = result["model_name"]
-            
-            # Build fit results message
-            msg = f"Fit successful ({model}):\n\n"
-            
-            if model == "one_exp":
-                param_names = ["t0", "sig", "t1", "A1", "A3", "B"]
-            elif model == "two_exp":
-                param_names = ["t0", "sig", "t1", "t2", "A1", "A2", "A3", "B"]
-            else:  # two_exp1
-                param_names = ["t0", "sig", "t1", "t2", "A1", "A2", "B"]
-            
-            for name, val, err in zip(param_names, p, perr):
-                msg += f"{name} = {val:.3f} ± {err:.3f}\n"
-            
-            logger.info(msg)
-            self.status.setText("Analysis complete - Fit successful")
-        else:
-            self. status.setText("Analysis complete - Fit failed (using initial guess)")
-        
-        self._create_or_update_artists(result)
-
-    # Pan/zoom
-    def on_press(self, event):
-        if event.button == 1 and event.inaxes:
-            self._pan_state[event.inaxes] = {"x": event.xdata, "y": event.ydata}
-
-    def on_motion(self, event):
-        if event.button == 1 and event.inaxes in self._pan_state and event.xdata is not None:
-            ax = event.inaxes
-            dx = event.xdata - self._pan_state[ax]["x"]
-            dy = event.ydata - self._pan_state[ax]["y"]
-            xlim = ax.get_xlim()
-            ax.set_xlim(xlim[0] - dx, xlim[1] - dx)
-            if ax in self._current_im_axes:
-                ylim = ax.get_ylim()
-                ax.set_ylim(ylim[0] - dy, ylim[1] - dy)
-            self.canvas.draw_idle()
-
-    def on_release(self, event):
-        if event.inaxes in self._pan_state:
-            del self._pan_state[event.inaxes]
-
-    def on_scroll(self, event):
-        if not event.inaxes:
-            return
-        zoom = 1.1 if event.button == "up" else 1 / 1.1
-        xlim = event.inaxes.get_xlim()
-        event.inaxes.set_xlim(
-            event.xdata - (event.xdata - xlim[0]) / zoom,
-            event.xdata + (xlim[1] - event.xdata) / zoom,
-        )
-        if event.inaxes in self._current_im_axes:
-            ylim = event.inaxes.get_ylim()
-            event.inaxes.set_ylim(
-                event.ydata - (event.ydata - ylim[0]) / zoom,
-                event.ydata + (ylim[1] - event.ydata) / zoom,
-            )
-        self.canvas.draw_idle()
-
-    def _create_or_update_artists(self, result):
-        fCNT, rfCNT = result["fCNT"], result["rfCNT"]
-        S, p, t_fs, fft = result["S"], result["p"], result["t_fs"], result["fft"]
-
-        plot_data = {
-            "Raw Avg": {"arr": -self.data["analog"], "xaxis": self.TOF},
-            "Folded": {"arr": fCNT, "xaxis": self.TOF},
-            "SC Corrected": {"arr": rfCNT, "xaxis": self.TOF},
-            "FFT": {"x": fft["freq_hz"] if fft else np.array([]), "y": fft["power"] if fft else np.array([])},
-            "Dynamics Log": {"x": t_fs, "y": S},
-            "Dynamics Lin": {"x": t_fs, "y": S},
-            "Residuals": {"x": t_fs, "y": S - self.two_exp1(t_fs, *p) if p is not None and len(p) >= 7 else np.zeros_like(t_fs)},
-        }
-
-        if not self._artists_initialized:
-            self.figure.clf()
-            self._axes_list = []
-            for r in range(3):
-                for c in range(3):
-                    ax = self.figure.add_subplot(3, 3, r * 3 + c + 1)
-                    ax.tick_params(axis="both", which="major", labelsize=7)
-                    self._axes_list.append(ax)
-
-    
-    def _on_plot_selected_for_custom(self, plot_name):
-        """Update controls when user selects a plot to customize"""
-        if not self._last_analysis or not plot_name:
-            return
-        
-        # Update spinbox values based on current plot settings
-        cfg = GLOBAL_SETTINGS["plots"]. get(plot_name, {})
-        art = self._plot_artists.get(plot_name)
-        
-        if not art:
-            return
-        
-        ax = art["ax"]
-        
-        # Block signals while updating
-        for spin in [self.spin_plot_xmin, self.spin_plot_xmax, 
-                     self.spin_plot_ymin, self.spin_plot_ymax,
-                     self.spin_plot_cmin, self.spin_plot_cmax]:
-            spin.blockSignals(True)
-        
-        # Set axis limits
-        xlim = ax.get_xlim()
-        ylim = ax.get_ylim()
-        
-        self.spin_plot_xmin. setValue(xlim[0])
-        self.spin_plot_xmax.setValue(xlim[1])
-        self.spin_plot_ymin.setValue(ylim[0])
-        self.spin_plot_ymax.setValue(ylim[1])
-        
-        # Set color limits and colormap for image plots
-        if plot_name in self.IMAGE_PLOTS:
-            self. cmap_combo_analysis.setEnabled(True)
-            self.spin_plot_cmin.setEnabled(True)
-            self.spin_plot_cmax.setEnabled(True)
-            
-            cmap_val = cfg.get("cmap", "viridis")
-            self.cmap_combo_analysis. setCurrentText(cmap_val)
-            
-            vmin = cfg.get("vmin", 0.0)
-            vmax = cfg.get("vmax", 0.4)
-            self.spin_plot_cmin.setValue(vmin)
-            self.spin_plot_cmax.setValue(vmax)
-        else:
-            self.cmap_combo_analysis.setEnabled(False)
-            self.spin_plot_cmin.setEnabled(False)
-            self.spin_plot_cmax.setEnabled(False)
-        
-        # Unblock signals
-        for spin in [self.spin_plot_xmin, self.spin_plot_xmax, 
-                     self. spin_plot_ymin, self.spin_plot_ymax,
-                     self.spin_plot_cmin, self.spin_plot_cmax]:
-            spin.blockSignals(False)
-    
-    def _on_analysis_cmap_changed(self):
-        """Handle colormap change for selected plot"""
-        plot_name = self.plot_select_combo.currentText()
-        if not plot_name or plot_name not in self.IMAGE_PLOTS:
-            return
-        
-        new_cmap = self.cmap_combo_analysis.currentText()
-        GLOBAL_SETTINGS["plots"]. setdefault(plot_name, {})["cmap"] = new_cmap
-        save_settings(GLOBAL_SETTINGS)
-        
-        if self._last_analysis:
-            self._update_single_plot(plot_name)
-    
-    def _on_plot_limit_changed(self):
-        """Handle axis limit changes for selected plot"""
-        plot_name = self.plot_select_combo.currentText()
-        if not plot_name or not self._last_analysis:
-            return
-        
-        art = self._plot_artists.get(plot_name)
-        if not art:
-            return
-        
-        ax = art["ax"]
-        
-        xmin = self.spin_plot_xmin.value()
-        xmax = self.spin_plot_xmax.value()
-        ymin = self.spin_plot_ymin.value()
-        ymax = self.spin_plot_ymax.value()
-        
-        ax.set_xlim(xmin, xmax)
-        ax.set_ylim(ymin, ymax)
-        self. canvas.draw_idle()
-    
-    def _on_plot_color_changed(self):
-        """Handle color limit changes for selected image plot"""
-        plot_name = self.plot_select_combo. currentText()
-        if not plot_name or plot_name not in self.IMAGE_PLOTS:
-            return
-        
-        vmin = self.spin_plot_cmin.value()
-        vmax = self.spin_plot_cmax.value()
-        
-        GLOBAL_SETTINGS["plots"].setdefault(plot_name, {})["vmin"] = vmin
-        GLOBAL_SETTINGS["plots"].setdefault(plot_name, {})["vmax"] = vmax
-        save_settings(GLOBAL_SETTINGS)
-        
-        if self._last_analysis:
-            self._update_single_plot(plot_name)
-    
-    def _reset_plot_limits(self):
-        """Reset selected plot to automatic limits"""
-        plot_name = self.plot_select_combo. currentText()
-        if not plot_name or not self._last_analysis:
-            return
-        
-        art = self._plot_artists.get(plot_name)
-        if not art:
-            return
-        
-        ax = art["ax"]
-        ax.relim()
-        ax.autoscale_view()
-        
-        # Update spinboxes
-        xlim = ax.get_xlim()
-        ylim = ax.get_ylim()
-        
-        self.spin_plot_xmin.blockSignals(True)
-        self.spin_plot_xmax.blockSignals(True)
-        self.spin_plot_ymin.blockSignals(True)
-        self.spin_plot_ymax.blockSignals(True)
-        
-        self.spin_plot_xmin.setValue(xlim[0])
-        self.spin_plot_xmax.setValue(xlim[1])
-        self.spin_plot_ymin.setValue(ylim[0])
-        self.spin_plot_ymax. setValue(ylim[1])
-        
-        self.spin_plot_xmin.blockSignals(False)
-        self.spin_plot_xmax.blockSignals(False)
-        self.spin_plot_ymin.blockSignals(False)
-        self.spin_plot_ymax.blockSignals(False)
-        
-        self.canvas.draw_idle()
-    
-    def _update_single_plot(self, plot_name):
-        """Refresh a single plot with updated settings"""
-        if not self._last_analysis or not self._artists_initialized:
-            return
-        
-        art = self._plot_artists.get(plot_name)
-        if not art or not self. chk_plots[plot_name]. isChecked():
-            return
-        
-        # Re-run the plot update for this specific plot
-        result = self._last_analysis
-        fCNT, rfCNT = result["fCNT"], result["rfCNT"]
-        S, p, t_fs, fft = result["S"], result["p"], result["t_fs"], result["fft"]
-        
-        plot_data = {
-            "Raw Avg": {"arr": -self.data["analog"], "xaxis": self.TOF},
-            "Folded":  {"arr": fCNT, "xaxis": self.TOF},
-            "SC Corrected": {"arr": rfCNT, "xaxis":  self.TOF},
-            "FFT":  {"x": fft["freq_hz"] if fft else np.array([]), "y": fft["power"] if fft else np.array([])},
-            "Dynamics Log": {"x": t_fs, "y": S},
-            "Dynamics Lin": {"x": t_fs, "y": S},
-            "Residuals": {"x": t_fs, "y": S - self.two_exp1(t_fs, *p) if p is not None and len(p) >= 7 else np.zeros_like(t_fs)},
-        }
-        
-        ax = art["ax"]
-        
-        if plot_name in self.IMAGE_PLOTS:
-            im = art["im"]
-            arr = plot_data[plot_name]["arr"]
-            xaxis = plot_data[plot_name]["xaxis"]
-            denom = float(np.abs(np.max(arr))) if arr.size else 1.0
-            if denom == 0:
-                denom = 1.0
-            im.set_data(arr / denom)
-            
-            cfg = GLOBAL_SETTINGS["plots"].get(plot_name, {})
-            im.set_cmap(cfg.get("cmap", "viridis"))
-            im.set_clim(cfg.get("vmin", 0.0), cfg.get("vmax", 0.4))
-        
-        self.canvas.draw_idle()
-
-        for i, name in enumerate(self.ALL_PLOTS):
-            ax = self._axes_list[i]
-            if name in self.IMAGE_PLOTS:
-                im = ax.imshow([[0]], aspect="auto", origin="lower", cmap="viridis")
-                self._plot_artists[name] = {"ax": ax, "im": im}
-                self._current_im_axes[ax] = im
-            else:
-                line, = ax.plot([], [], "-k", lw=1)
-                fit_line, = ax.plot([], [], "-r", lw=1.2)
-                self._plot_artists[name] = {"ax": ax, "line": line, "fit_line": fit_line}
-                ax.set_title(name, fontsize=8)
-
-            for j in range(len(self.ALL_PLOTS), 9):
-                self._axes_list[j].set_visible(False)
-
-            self.figure.tight_layout()
-            self._artists_initialized = True
-
-        for name in self.ALL_PLOTS:
-            art = self._plot_artists.get(name)
-            if art:
-                art["ax"].set_visible(self.chk_plots[name].isChecked())
-
-        for name in self.ALL_PLOTS:
-            if not self.chk_plots[name].isChecked():
-                continue
-            art = self._plot_artists.get(name)
-            if not art:
-                continue
-            ax = art["ax"]
-
-            if name in self.IMAGE_PLOTS:
-                im = art["im"]
-                arr = plot_data[name]["arr"]
-                xaxis = plot_data[name]["xaxis"]
-                denom = float(np.abs(np.max(arr))) if arr.size else 1.0
-                if denom == 0:
-                    denom = 1.0
-                im.set_data(arr / denom)
-                im.set_extent([float(xaxis.min()), float(xaxis.max()), 0, arr.shape[0]])
-                cfg = GLOBAL_SETTINGS["plots"].get(name, {})
-                im.set_cmap(cfg.get("cmap", "viridis"))
-                im.set_clim(cfg.get("vmin", 0.0), cfg.get("vmax", 0.4))
-                ax.set_xlim(float(xaxis.min()), float(xaxis.max()))
-                ax.set_ylim(0, arr.shape[0])
-            else:
-                line = art["line"]
-                fit_line = art["fit_line"]
-                xd = plot_data[name]["x"]
-                yd = plot_data[name]["y"]
-
-                if name == "Dynamics Log":
-                    ax.set_xscale("log")
-                    mask = xd > 0
-                    xd = xd[mask]
-                    yd = yd[mask]
-                else:
-                    ax.set_xscale("linear")
-
-                line.set_data(xd, yd)
-
-                if name in ["Dynamics Log", "Dynamics Lin"] and p is not None and len(p) >= 7:
-                    try:
-                        yfit = self.two_exp1(xd, *p)
-                        fit_line.set_data(xd, yfit)
-                        fit_line.set_visible(True)
-                    except Exception:
-                        fit_line.set_visible(False)
-                else:
-                    fit_line.set_visible(False)
-
-                ax.relim()
-                ax.autoscale_view()
-
-            ax.set_title(name, fontsize=8)
-
-        self.canvas.draw_idle()
-
 class TOFExplorer(QMainWindow):
     def __init__(self):
         super().__init__()
