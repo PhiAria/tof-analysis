@@ -140,6 +140,43 @@ def tof_to_binding_energy(tof_ns, photon_energy_eV, calibration: CalibrationCons
     return _safe_float(photon_energy_eV) - ke - calibration.WORK_FUNCTION_EV
 
 
+def load_log_file(folder_path):
+    """
+    Load log.dat file and extract scan parameters.
+    Returns:  Npts, l_mm, t_fs, labtime
+    """
+    try:
+        log_path = os.path.join(folder_path, "log.dat")
+        if not os.path.exists(log_path):
+            logger.warning(f"log.dat not found in {folder_path}, using defaults")
+            return None, None, None, None
+        
+        LOG = np.loadtxt(log_path, usecols=(0, 1, 2))
+        logger.info(f"Loaded log.dat with {LOG.shape[0]} lines")
+        
+        # Calculate number of points per scan
+        Npts = int(np.max(LOG[:, 0]) // 2) + 1
+        
+        # Extract motor positions for first scan
+        l_mm = LOG[0:Npts, 2]
+        
+        # Calculate time axis in femtoseconds
+        l0_mm = GLOBAL_SETTINGS["fit"]. get("t0_fixed_mm", 142.298)
+        speed_of_light = 299792458  # m/s
+        t_fs = (l_mm - l0_mm) * 1e-3 / speed_of_light * 2 * 1e15
+        
+        # Calculate lab time
+        labtime = LOG[:, 1] - LOG[0, 1]
+        
+        logger.info(f"Npts={Npts}, scan range: {np.min(t_fs):.1f} to {np.max(t_fs):.1f} fs")
+        
+        return Npts, l_mm, t_fs, labtime
+        
+    except Exception as e:
+        logger.exception(f"Failed to load log.dat: {e}")
+        return None, None, None, None
+
+
 MAX_DISPLAY_COLS = 1400
 
 class FastLoader(QThread):
@@ -327,18 +364,25 @@ class AnalysisWorker(QThread):
             AVG = self.data["analog"]
             CNT = self.data["counting"]
             n_start = int(self.params.get("n_start", 0))
-            n_stop = int(self.params.get("n_stop", AVG.shape[0]))
-            n_pts = int(self.params.get("n_pts", 1))
+            n_stop = int(self. params.get("n_stop", AVG.shape[0]))
             roi_min = int(self.params.get("roi_min", 295))
             roi_max = int(self.params.get("roi_max", 310))
             level = float(self.params.get("edge_level", 30))
             model_name = self.params.get("model", "two_exp1")
-            t_fs = self.params.get("t_fs", np.zeros(0))
             fft_requested = bool(self.params.get("fft", True))
-
+            
+            # Load log.dat to get Npts and t_fs
+            Npts, l_mm, t_fs, labtime = load_log_file(self.folder)
+            
+            # Fallback if log.dat not found
+            if Npts is None:
+                logger.warning("Using fallback:  Npts=1, approximating t_fs")
+                Npts = 1
+                t_fs = np.arange(n_stop - n_start)
+            
             self.progress.emit(0)
-            fAVG = self.fold_twoway(AVG[n_start:n_stop], n_pts)
-            fCNT = self.fold_twoway(CNT[n_start:n_stop], n_pts)
+            fAVG = self.fold_twoway(AVG[n_start:n_stop], Npts)
+            fCNT = self.fold_twoway(CNT[n_start:n_stop], Npts)
             self.progress.emit(15)
 
             col0 = max(0, min(290, fCNT.shape[1]-1))
@@ -667,19 +711,17 @@ class AnalysisWindow(QMainWindow):
             QMessageBox.warning(self, "Busy", "Analysis is already running")
             return
 
-        self.status.setText("Running analysis...")
+        self.status. setText("Running analysis...")
         self.btn_run.setEnabled(False)
 
-        t_fs = np.arange(self.spin_nstop.value() - self.spin_nstart.value())
+        # Don't calculate t_fs here - let worker load it from log.dat
         params = {
             "n_start": self.spin_nstart.value(),
             "n_stop": self.spin_nstop.value(),
-            "n_pts": 1,
             "roi_min": self.spin_roi_min.value(),
             "roi_max": self.spin_roi_max.value(),
             "edge_level": 30,
             "model": self.model_combo.currentText(),
-            "t_fs": t_fs,
             "fft": True,
             "tof_arr": self.TOF,
         }
