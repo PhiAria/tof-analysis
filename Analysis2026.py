@@ -747,6 +747,192 @@ class AnalysisWindow(QMainWindow):
         v.addStretch()
         
         return v
+
+
+
+    def _on_plot_visibility_changed(self, state):
+        if self._last_analysis is not None:
+            self._create_or_update_artists(self._last_analysis)
+    
+    def _on_plot_selected_for_custom(self, plot_name):
+        """Update controls when user selects a plot to customize"""
+        if not self._last_analysis or not plot_name: 
+            return
+        
+        # Update spinbox values based on current plot settings
+        cfg = GLOBAL_SETTINGS["plots"]. get(plot_name, {})
+        art = self._plot_artists. get(plot_name)
+        
+        if not art:
+            return
+        
+        ax = art["ax"]
+        
+        # Block signals while updating
+        for spin in [self.spin_plot_xmin, self.spin_plot_xmax, 
+                     self.spin_plot_ymin, self.spin_plot_ymax,
+                     self.spin_plot_cmin, self.spin_plot_cmax]:
+            spin.blockSignals(True)
+        
+        # Set axis limits
+        xlim = ax.get_xlim()
+        ylim = ax.get_ylim()
+        
+        self.spin_plot_xmin. setValue(xlim[0])
+        self.spin_plot_xmax.setValue(xlim[1])
+        self.spin_plot_ymin.setValue(ylim[0])
+        self.spin_plot_ymax.setValue(ylim[1])
+        
+        # Set color limits and colormap for image plots
+        if plot_name in self.IMAGE_PLOTS:
+            self.cmap_combo_analysis.setEnabled(True)
+            self.spin_plot_cmin.setEnabled(True)
+            self.spin_plot_cmax.setEnabled(True)
+            
+            cmap_val = cfg.get("cmap", "viridis")
+            self.cmap_combo_analysis.setCurrentText(cmap_val)
+            
+            vmin = cfg.get("vmin", 0.0)
+            vmax = cfg.get("vmax", 0.4)
+            self.spin_plot_cmin.setValue(vmin)
+            self.spin_plot_cmax.setValue(vmax)
+        else:
+            self.cmap_combo_analysis.setEnabled(False)
+            self.spin_plot_cmin.setEnabled(False)
+            self.spin_plot_cmax.setEnabled(False)
+        
+        # Unblock signals
+        for spin in [self.spin_plot_xmin, self.spin_plot_xmax, 
+                     self.spin_plot_ymin, self.spin_plot_ymax,
+                     self.spin_plot_cmin, self.spin_plot_cmax]:
+            spin.blockSignals(False)
+    
+    def _on_analysis_cmap_changed(self):
+        """Handle colormap change for selected plot"""
+        plot_name = self.plot_select_combo.currentText()
+        if not plot_name or plot_name not in self.IMAGE_PLOTS:
+            return
+        
+        new_cmap = self.cmap_combo_analysis.currentText()
+        GLOBAL_SETTINGS["plots"]. setdefault(plot_name, {})["cmap"] = new_cmap
+        save_settings(GLOBAL_SETTINGS)
+        
+        if self._last_analysis:
+            self._update_single_plot(plot_name)
+    
+    def _on_plot_limit_changed(self):
+        """Handle axis limit changes for selected plot"""
+        plot_name = self.plot_select_combo.currentText()
+        if not plot_name or not self._last_analysis:
+            return
+        
+        art = self._plot_artists.get(plot_name)
+        if not art:
+            return
+        
+        ax = art["ax"]
+        
+        xmin = self.spin_plot_xmin.value()
+        xmax = self.spin_plot_xmax.value()
+        ymin = self.spin_plot_ymin.value()
+        ymax = self.spin_plot_ymax.value()
+        
+        ax.set_xlim(xmin, xmax)
+        ax.set_ylim(ymin, ymax)
+        self. canvas.draw_idle()
+    
+    def _on_plot_color_changed(self):
+        """Handle color limit changes for selected image plot"""
+        plot_name = self.plot_select_combo. currentText()
+        if not plot_name or plot_name not in self.IMAGE_PLOTS:
+            return
+        
+        vmin = self.spin_plot_cmin.value()
+        vmax = self.spin_plot_cmax.value()
+        
+        GLOBAL_SETTINGS["plots"].setdefault(plot_name, {})["vmin"] = vmin
+        GLOBAL_SETTINGS["plots"].setdefault(plot_name, {})["vmax"] = vmax
+        save_settings(GLOBAL_SETTINGS)
+        
+        if self._last_analysis:
+            self._update_single_plot(plot_name)
+    
+    def _reset_plot_limits(self):
+        """Reset selected plot to automatic limits"""
+        plot_name = self.plot_select_combo. currentText()
+        if not plot_name or not self._last_analysis:
+            return
+        
+        art = self._plot_artists.get(plot_name)
+        if not art:
+            return
+        
+        ax = art["ax"]
+        ax.relim()
+        ax.autoscale_view()
+        
+        # Update spinboxes
+        xlim = ax.get_xlim()
+        ylim = ax.get_ylim()
+        
+        self.spin_plot_xmin.blockSignals(True)
+        self.spin_plot_xmax. blockSignals(True)
+        self.spin_plot_ymin.blockSignals(True)
+        self.spin_plot_ymax.blockSignals(True)
+        
+        self.spin_plot_xmin.setValue(xlim[0])
+        self.spin_plot_xmax.setValue(xlim[1])
+        self.spin_plot_ymin.setValue(ylim[0])
+        self.spin_plot_ymax. setValue(ylim[1])
+        
+        self.spin_plot_xmin.blockSignals(False)
+        self.spin_plot_xmax.blockSignals(False)
+        self.spin_plot_ymin.blockSignals(False)
+        self.spin_plot_ymax.blockSignals(False)
+        
+        self.canvas.draw_idle()
+    
+    def _update_single_plot(self, plot_name):
+        """Refresh a single plot with updated settings"""
+        if not self._last_analysis or not self._artists_initialized:
+            return
+        
+        art = self._plot_artists.get(plot_name)
+        if not art or not self. chk_plots[plot_name]. isChecked():
+            return
+        
+        # Re-run the plot update for this specific plot
+        result = self._last_analysis
+        fCNT, rfCNT = result["fCNT"], result["rfCNT"]
+        S, p, t_fs, fft = result["S"], result["p"], result["t_fs"], result["fft"]
+        
+        plot_data = {
+            "Raw Avg": {"arr": -self.data["analog"], "xaxis": self.TOF},
+            "Folded": {"arr": fCNT, "xaxis": self.TOF},
+            "SC Corrected":  {"arr": rfCNT, "xaxis":  self.TOF},
+            "FFT": {"x": fft["freq_hz"] if fft else np.array([]), "y": fft["power"] if fft else np.array([])},
+            "Dynamics Log":  {"x": t_fs, "y": S},
+            "Dynamics Lin": {"x": t_fs, "y": S},
+            "Residuals": {"x":  t_fs, "y": S - self.two_exp1(t_fs, *p) if p is not None and len(p) >= 7 else np.zeros_like(t_fs)},
+        }
+        
+        ax = art["ax"]
+        
+        if plot_name in self.IMAGE_PLOTS:
+            im = art["im"]
+            arr = plot_data[plot_name]["arr"]
+            xaxis = plot_data[plot_name]["xaxis"]
+            denom = float(np.abs(np.max(arr))) if arr. size else 1.0
+            if denom == 0:
+                denom = 1.0
+            im.set_data(arr / denom)
+            
+            cfg = GLOBAL_SETTINGS["plots"].get(plot_name, {})
+            im.set_cmap(cfg.get("cmap", "viridis"))
+            im.set_clim(cfg. get("vmin", 0.0), cfg.get("vmax", 0.4))
+        
+        self.canvas.draw_idle()
+
 class TOFExplorer(QMainWindow):
     def __init__(self):
         super().__init__()
