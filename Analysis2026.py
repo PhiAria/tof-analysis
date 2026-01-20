@@ -933,6 +933,232 @@ class AnalysisWindow(QMainWindow):
         
         self.canvas.draw_idle()
 
+
+
+    def _create_expert_dock(self):
+        """Create expert dock - placeholder for now"""
+        pass
+
+    def run_analysis(self):
+        if self._analysis_worker is not None and self._analysis_worker.isRunning():
+            logger.warning("Analysis already running")
+            return
+
+        self. status. setText("Running analysis...")
+        self.btn_run.setEnabled(False)
+
+        params = {
+            "n_start": self.spin_nstart.value(),
+            "n_stop": self.spin_nstop.value(),
+            "roi_min": self.spin_roi_min.value(),
+            "roi_max": self.spin_roi_max.value(),
+            "model": self.model_combo.currentText(),
+            "fft":  True,
+            "edge_level": 30,
+        }
+
+        # Update t0_fixed_mm in settings
+        GLOBAL_SETTINGS["fit"]["t0_fixed_mm"] = self.spin_l0.value()
+        save_settings(GLOBAL_SETTINGS)
+
+        self._analysis_worker = AnalysisWorker(self.folder, self.data, params)
+        self._analysis_worker.progress. connect(lambda p: self.status.setText(f"Analysis:  {p}%"))
+        self._analysis_worker.finished.connect(self._on_analysis_finished)
+        self._analysis_worker.start()
+
+    def _on_analysis_finished(self, result):
+        self.btn_run.setEnabled(True)
+        if "error" in result:
+            self.status.setText(f"Error: {result['error']}")
+            QMessageBox.critical(self, "Analysis Error", result["error"])
+            return
+
+        self._last_analysis = result
+        self.status.setText("Analysis complete")
+        
+        # Log fit results if available
+        if result.get("fit_success") and result.get("perr") is not None:
+            logger. info("=== FIT RESULTS ===")
+            logger.info(f"Model: {result['model_name']}")
+            p = result["p"]
+            perr = result["perr"]
+            param_names = {
+                "one_exp":  ["t0", "sig", "t1", "A1", "A3", "B"],
+                "two_exp": ["t0", "sig", "t1", "t2", "A1", "A2", "A3", "B"],
+                "two_exp1": ["t0", "sig", "t1", "t2", "A1", "A2", "B"]
+            }
+            names = param_names. get(result['model_name'], [f"p{i}" for i in range(len(p))])
+            for i, (name, val, err) in enumerate(zip(names, p, perr)):
+                logger.info(f"  {name}: {val:.6f} ± {err:.6f}")
+
+        self._create_or_update_artists(result)
+
+    def _create_or_update_artists(self, result):
+        """Create or update all plot artists"""
+        self.figure.clear()
+        
+        fAVG = result["fAVG"]
+        fCNT = result["fCNT"]
+        rfCNT = result["rfCNT"]
+        rfAVG = result["rfAVG"]
+        edge_positions = result["edge_positions"]
+        fitted_edge = result. get("fitted_edge", np.array([]))
+        S = result["S"]
+        p = result["p"]
+        t_fs = result["t_fs"]
+        fft = result. get("fft")
+        model_name = result. get("model_name", "two_exp1")
+
+        # Determine grid layout based on visible plots
+        visible_plots = [name for name in self.ALL_PLOTS if self.chk_plots[name].isChecked()]
+        n_plots = len(visible_plots)
+        
+        if n_plots == 0:
+            return
+
+        # Create grid
+        nrows = (n_plots + 2) // 3
+        ncols = min(n_plots, 3)
+        
+        self._plot_artists = {}
+        self._axes_list = []
+        
+        for idx, plot_name in enumerate(visible_plots):
+            ax = self.figure.add_subplot(nrows, ncols, idx + 1)
+            self._axes_list.append(ax)
+            
+            cfg = GLOBAL_SETTINGS["plots"].get(plot_name, {})
+            
+            if plot_name == "Raw Avg": 
+                arr = -self. data["analog"]
+                denom = float(np.abs(np.max(arr))) if arr.size else 1.0
+                if denom == 0:
+                    denom = 1.0
+                im = ax.imshow(arr / denom, aspect='auto', origin='lower',
+                              extent=[self.TOF[0], self.TOF[-1], 0, arr.shape[0]],
+                              cmap=cfg.get("cmap", "viridis"),
+                              vmin=cfg. get("vmin", 0.0), vmax=cfg.get("vmax", 0.4))
+                ax.set_title("Raw Avg")
+                ax. set_xlabel("TOF (ns)")
+                ax.set_ylabel("File Index")
+                self. figure.colorbar(im, ax=ax)
+                self._plot_artists[plot_name] = {"ax": ax, "im": im}
+                
+            elif plot_name == "Folded": 
+                denom = float(np.abs(np.max(fCNT))) if fCNT.size else 1.0
+                if denom == 0:
+                    denom = 1.0
+                im = ax. imshow(fCNT / denom, aspect='auto', origin='lower',
+                              extent=[self.TOF[0], self.TOF[-1], t_fs[0], t_fs[-1]],
+                              cmap=cfg.get("cmap", "viridis"),
+                              vmin=cfg.get("vmin", 0.0), vmax=cfg.get("vmax", 0.4))
+                ax. set_title("Folded")
+                ax.set_xlabel("TOF (ns)")
+                ax.set_ylabel("Delay (fs)")
+                if edge_positions. size > 0:
+                    ax. plot(edge_positions, t_fs[: len(edge_positions)], 'r. ', ms=2, label='Edge')
+                    if fitted_edge.size > 0:
+                        ax.plot(fitted_edge[: len(t_fs)], t_fs, 'g-', lw=1, label='Fit')
+                    ax.legend()
+                self. figure.colorbar(im, ax=ax)
+                self._plot_artists[plot_name] = {"ax": ax, "im":  im}
+                
+            elif plot_name == "SC Corrected":
+                denom = float(np.abs(np.max(rfCNT))) if rfCNT.size else 1.0
+                if denom == 0:
+                    denom = 1.0
+                im = ax.imshow(rfCNT / denom, aspect='auto', origin='lower',
+                              extent=[self.TOF[0], self.TOF[-1], t_fs[0], t_fs[-1]],
+                              cmap=cfg.get("cmap", "viridis"),
+                              vmin=cfg. get("vmin", 0.0), vmax=cfg.get("vmax", 0.4))
+                ax.set_title("SC Corrected")
+                ax.set_xlabel("TOF (ns)")
+                ax.set_ylabel("Delay (fs)")
+                self.figure.colorbar(im, ax=ax)
+                self._plot_artists[plot_name] = {"ax": ax, "im": im}
+                
+            elif plot_name == "FFT":
+                if fft: 
+                    ax. plot(fft["freq_hz"], fft["power"], 'k-', lw=0.5)
+                    ax. set_title("FFT")
+                    ax.set_xlabel("Frequency (Hz)")
+                    ax.set_ylabel("Power")
+                    ax.set_yscale('log')
+                    ax.grid(True, alpha=0.3)
+                self._plot_artists[plot_name] = {"ax": ax}
+                
+            elif plot_name == "Dynamics Log":
+                ax.semilogy(t_fs, S, 'ko', ms=3, label='Data')
+                if p is not None and len(p) > 0:
+                    if model_name == "one_exp":
+                        fit_curve = self. one_exp(t_fs, *p)
+                    elif model_name == "two_exp": 
+                        fit_curve = self. two_exp(t_fs, *p)
+                    else:
+                        fit_curve = self.two_exp1(t_fs, *p)
+                    ax.semilogy(t_fs, fit_curve, 'r-', lw=1, label='Fit')
+                ax.set_title("Dynamics (Log)")
+                ax.set_xlabel("Delay (fs)")
+                ax. set_ylabel("Intensity")
+                ax.legend()
+                ax.grid(True, alpha=0.3)
+                self._plot_artists[plot_name] = {"ax": ax}
+                
+            elif plot_name == "Dynamics Lin":
+                ax.plot(t_fs, S, 'ko', ms=3, label='Data')
+                if p is not None and len(p) > 0:
+                    if model_name == "one_exp": 
+                        fit_curve = self.one_exp(t_fs, *p)
+                    elif model_name == "two_exp":
+                        fit_curve = self.two_exp(t_fs, *p)
+                    else:
+                        fit_curve = self.two_exp1(t_fs, *p)
+                    ax.plot(t_fs, fit_curve, 'r-', lw=1, label='Fit')
+                ax.set_title("Dynamics (Linear)")
+                ax.set_xlabel("Delay (fs)")
+                ax.set_ylabel("Intensity")
+                ax.legend()
+                ax.grid(True, alpha=0.3)
+                self._plot_artists[plot_name] = {"ax": ax}
+                
+            elif plot_name == "Residuals":
+                if p is not None and len(p) > 0:
+                    if model_name == "one_exp":
+                        fit_curve = self.one_exp(t_fs, *p)
+                    elif model_name == "two_exp":
+                        fit_curve = self.two_exp(t_fs, *p)
+                    else:
+                        fit_curve = self.two_exp1(t_fs, *p)
+                    residuals = S - fit_curve
+                    ax.plot(t_fs, residuals, 'ko', ms=2)
+                    ax.axhline(0, color='r', linestyle='--', lw=1)
+                ax.set_title("Residuals")
+                ax.set_xlabel("Delay (fs)")
+                ax.set_ylabel("Data - Fit")
+                ax. grid(True, alpha=0.3)
+                self._plot_artists[plot_name] = {"ax": ax}
+
+        self.figure.tight_layout()
+        self._artists_initialized = True
+        self.canvas. draw()
+
+    def on_scroll(self, event):
+        """Handle mouse scroll for zoom"""
+        pass
+
+    def on_press(self, event):
+        """Handle mouse press for pan"""
+        pass
+
+    def on_motion(self, event):
+        """Handle mouse motion for pan"""
+        pass
+
+    def on_release(self, event):
+        """Handle mouse release"""
+        pass
+
+
 class TOFExplorer(QMainWindow):
     def __init__(self):
         super().__init__()
