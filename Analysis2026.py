@@ -385,8 +385,10 @@ class AnalysisWorker(QThread):
             fCNT = self.fold_twoway(CNT[n_start:n_stop], Npts)
             self.progress.emit(15)
 
-            col0 = max(0, min(290, fCNT.shape[1]-1))
-            col1 = max(col0+1, min(325, fCNT.shape[1]))
+            # Edge detection range (multiply by POINTS_PER_NS)
+            POINTS_PER_NS = _safe_float(GLOBAL_SETTINGS["data"].get("POINTS_PER_NS", 1.0/0.8))
+            col0 = max(0, min(int(290 * POINTS_PER_NS), fCNT.shape[1]-1))
+            col1 = max(col0+1, min(int(325 * POINTS_PER_NS), fCNT.shape[1]))
             edge_positions, fitted_edge = self.find_pump_charge(t_fs, fCNT[:, col0:col1], level)
             self.progress.emit(35)
 
@@ -396,9 +398,10 @@ class AnalysisWorker(QThread):
             rfAVG = self.shift_rows_fill_zero(fAVG, shifts)
             self.progress.emit(55)
 
-            roi_min = max(0, min(roi_min, rfCNT.shape[1]-1))
-            roi_max = max(roi_min+1, min(roi_max, rfCNT.shape[1]))
-            S = np.sum(rfCNT[:, roi_min:roi_max], axis=1)
+            # ROI indices (multiply by POINTS_PER_NS)
+            roi_min_idx = max(0, min(int(roi_min * POINTS_PER_NS), rfCNT.shape[1]-1))
+            roi_max_idx = max(roi_min_idx+1, min(int(roi_max * POINTS_PER_NS), rfCNT.shape[1]))
+            S = np.sum(rfCNT[:, roi_min_idx:roi_max_idx], axis=1)
             self.progress.emit(65)
 
             # Initial guesses for fitting
@@ -441,7 +444,7 @@ class AnalysisWorker(QThread):
 
             fft_result = None
             if fft_requested:
-                profile = np.mean(rfCNT[:, roi_min:roi_max], axis=0)
+                profile = np.mean(rfCNT[:, roi_min_idx:roi_max_idx], axis=0)
                 tof_arr = self.params.get("tof_arr", None)
                 dt_ns = 1.0
                 if tof_arr is not None:
