@@ -343,21 +343,18 @@ class AnalysisWorker(QThread):
             return edges, np.zeros_like(tau)
 
     @staticmethod
-    def shift_rows_fill_zero(M, shifts):
-        M = np.asarray(M)
-        n_rows, n_cols = M.shape
-        out = np.zeros_like(M)
-        shifts = np.asarray(shifts).astype(int)
-        for i in range(min(n_rows, shifts.size)):
-            s = shifts[i]
-            if s == 0:
-                out[i] = M[i]
-            elif s > 0:
-                out[i, s:] = M[i, :n_cols - s]
-            else:
-                sneg = -s
-                out[i, :n_cols - sneg] = M[i, sneg:]
-        return out
+    def correct_pump_charge(M, edge):
+        """
+        Correct pump-charge shift using np.roll (wraps at boundaries).
+        Reference implementation from notebook.
+        """
+        rM = M.copy()
+        for n in range(M.shape[0]):
+            rM[n, :] = np.roll(M[n, :], int(edge[0] - edge[n]))
+        return rM
+    
+    
+    @staticmethod
 
     def run(self):
         try:
@@ -394,8 +391,9 @@ class AnalysisWorker(QThread):
 
             ref = int(round(edge_positions[0])) if edge_positions.size > 0 else 0
             shifts = np.round(ref - edge_positions).astype(int)
-            rfCNT = self.shift_rows_fill_zero(fCNT, shifts)
-            rfAVG = self.shift_rows_fill_zero(fAVG, shifts)
+            # Use np.roll-based correction (matches reference notebook)
+            rfCNT = self.correct_pump_charge(fCNT, edge_positions)
+            rfAVG = self.correct_pump_charge(fAVG, edge_positions)
             self.progress.emit(55)
 
             # ROI indices (multiply by POINTS_PER_NS)
