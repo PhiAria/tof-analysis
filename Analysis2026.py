@@ -240,20 +240,59 @@ class FastLoader(QThread):
             analog_list, counting_list = [], []
             tof_axis = None
             total = len(files)
-
+            # Check if binning is enabled
+            BIN_TO_NS_FLAG = bool(GLOBAL_SETTINGS["data"]. get("BIN_TO_NS_FLAG", False))
+            DATA_POINTS_PER_NS = int(_safe_float(GLOBAL_SETTINGS["data"].get("POINTS_PER_NS", 1.0/0.8)))
+            
             for i, fpath in enumerate(files):
                 try:
                     df = self._read_tof_like_old(fpath)
                     if df.shape[1] < 2:
                         logger.warning(f"{fpath} has fewer than 2 columns — skipping")
                         continue
+                    
                     if tof_axis is None:
-                        tof_axis = df.iloc[:, 0].to_numpy()
-                    analog_list.append(df.iloc[:, 1].to_numpy())
+                        if BIN_TO_NS_FLAG and DATA_POINTS_PER_NS > 0:
+                            # Bin TOF axis to ns
+                            raw_tof = df.iloc[: , 0].to_numpy()
+                            tof_axis = raw_tof[:: DATA_POINTS_PER_NS]
+                        else:
+                            tof_axis = df.iloc[:, 0].to_numpy()
+                    
+                    # Process analog signal
+                    analog_raw = df.iloc[:, 1].to_numpy()
+                    if BIN_TO_NS_FLAG and DATA_POINTS_PER_NS > 0:
+                        # Reshape and average per ns
+                        n_bins = len(analog_raw) // DATA_POINTS_PER_NS
+                        if n_bins > 0:
+                            _avg = np.reshape(analog_raw[: n_bins * DATA_POINTS_PER_NS], 
+                                            (n_bins, DATA_POINTS_PER_NS))
+                            analog_list.append(np.mean(_avg, axis=1))
+                        else: 
+                            analog_list.append(analog_raw)
+                    else: 
+                        analog_list.append(analog_raw)
+                    
+                    # Process counting signal
                     if df.shape[1] > 2:
-                        counting_list.append(df.iloc[:, 2].to_numpy())
-                    else:
-                        counting_list.append(np.zeros_like(tof_axis))
+                        counting_raw = df.iloc[:, 2]. to_numpy()
+                        if BIN_TO_NS_FLAG and DATA_POINTS_PER_NS > 0:
+                            # Reshape and sum per ns
+                            n_bins = len(counting_raw) // DATA_POINTS_PER_NS
+                            if n_bins > 0:
+                                _cnt = np.reshape(counting_raw[: n_bins * DATA_POINTS_PER_NS],
+                                                (n_bins, DATA_POINTS_PER_NS))
+                                counting_list.append(np.sum(_cnt, axis=1))
+                            else:
+                                counting_list.append(counting_raw)
+                        else:
+                            counting_list.append(counting_raw)
+                    else: 
+                        # No counting data
+                        if BIN_TO_NS_FLAG and DATA_POINTS_PER_NS > 0 and len(analog_list) > 0:
+                            counting_list.append(np.zeros(len(analog_list[-1])))
+                        else: 
+                            counting_list.append(np.zeros_like(tof_axis))
                 except Exception as e_file:
                     logger.warning(f"Failed to parse {fpath}: {e_file} — skipping")
                     continue
