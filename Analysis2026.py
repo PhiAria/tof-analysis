@@ -1164,16 +1164,16 @@ class AnalysisWindow(QMainWindow):
         
         self.canvas.draw_idle()
 
-            for i, name in enumerate(self.ALL_PLOTS):
-                ax = self._axes_list[i]
-                if name in self.IMAGE_PLOTS:
-                    im = ax.imshow([[0]], aspect="auto", origin="lower", cmap="viridis")
-                    self._plot_artists[name] = {"ax": ax, "im": im}
-                    self._current_im_axes[ax] = im
-                else:
-                    line, = ax.plot([], [], "-k", lw=1)
-                    fit_line, = ax.plot([], [], "-r", lw=1.2)
-                    self._plot_artists[name] = {"ax": ax, "line": line, "fit_line": fit_line}
+        for i, name in enumerate(self.ALL_PLOTS):
+            ax = self._axes_list[i]
+            if name in self.IMAGE_PLOTS:
+                im = ax.imshow([[0]], aspect="auto", origin="lower", cmap="viridis")
+                self._plot_artists[name] = {"ax": ax, "im": im}
+                self._current_im_axes[ax] = im
+            else:
+                line, = ax.plot([], [], "-k", lw=1)
+                fit_line, = ax.plot([], [], "-r", lw=1.2)
+                self._plot_artists[name] = {"ax": ax, "line": line, "fit_line": fit_line}
                 ax.set_title(name, fontsize=8)
 
             for j in range(len(self.ALL_PLOTS), 9):
