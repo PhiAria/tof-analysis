@@ -1206,28 +1206,33 @@ class TOFExplorer(QMainWindow):
     def _poll_folder(self):
         if not self.folder:
             return
-        cur = sorted(glob.glob(os. path.join(self.folder, "TOF*. dat")))
+        cur = sorted(glob. glob(os. path.join(self.folder, "TOF*. dat")))
         
         # Log every poll attempt
         logger. info(f"Auto-watch:  Checking folder (found {len(cur)} files)")
         
+        # If no files exist, don't do anything
+        if len(cur) == 0:
+            logger.info("Auto-watch: No files in folder, skipping")
+            return
+        
         if cur != self.last_file_list:
             new_files = [f for f in cur if f not in self.last_file_list]
-            removed_files = [f for f in self. last_file_list if f not in cur]
+            removed_files = [f for f in self.last_file_list if f not in cur]
             
             if removed_files:
-                logger. info(f"Files removed: {len(removed_files)}; full reload")
-                self._start_loading(self.folder)
-                self.last_file_list = cur
-            elif new_files: 
-                logger.info(f"New files detected: {len(new_files)}; appending")
-                logger.info(f"New files: {[os.path. basename(f) for f in new_files]}")
-                self._append_new_files(new_files)
-                self.last_file_list = cur
-            else:
-                logger. info("Files changed; full reload")
+                logger.info(f"Files removed: {len(removed_files)}; full reload")
                 self._start_loading(self.folder)
                 self. last_file_list = cur
+            elif new_files:
+                logger.info(f"New files detected: {len(new_files)}; appending")
+                logger.info(f"New files: {[os.path.basename(f) for f in new_files]}")
+                self._append_new_files(new_files)
+                self.last_file_list = cur
+            else: 
+                logger.info("Files changed; full reload")
+                self._start_loading(self.folder)
+                self.last_file_list = cur
         else:
             logger.info("Auto-watch: No changes detected")
 
