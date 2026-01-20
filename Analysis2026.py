@@ -1194,7 +1194,7 @@ class TOFExplorer(QMainWindow):
         for s in [self.spin_xmin, self.spin_xmax, self.spin_ymin, self.spin_ymax, self.spin_cmin, self.spin_cmax]:
             s.blockSignals(False)
 
-        def _toggle_watch(self, state):
+    def _toggle_watch(self, state):
         enabled = (state == Qt.Checked)
         GLOBAL_SETTINGS["ui"]["auto_watch"] = bool(enabled)
         save_settings(GLOBAL_SETTINGS)
