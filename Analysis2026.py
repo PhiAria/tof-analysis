@@ -444,18 +444,30 @@ class AnalysisWorker(QThread):
 
             fft_result = None
             if fft_requested:
-                profile = np.mean(rfCNT[:, roi_min_idx:roi_max_idx], axis=0)
-                tof_arr = self.params.get("tof_arr", None)
-                dt_ns = 1.0
-                if tof_arr is not None:
-                    diffs = np.diff(tof_arr)
-                    dt_ns = float(np.median(diffs)) if diffs.size > 0 else 1.0
-                sig = profile - np.mean(profile)
+                # FFT on lab time axis (delay axis) to detect temporal fluctuations
+                # Sum over ROI in TOF direction to get intensity vs delay time
+                time_series = np.sum(rfCNT[:, roi_min_idx:roi_max_idx], axis=1)
+                
+                # Calculate time spacing
+                if labtime is not None and len(labtime) >= len(time_series):
+                    # Use actual lab time if available
+                    dt_mean = float(np.mean(np.diff(labtime[: len(time_series)]))) if len(labtime) > 1 else 1.0
+                else:
+                    # Fallback:  use delay time spacing from t_fs
+                    if len(t_fs) > 1:
+                        dt_mean = float(np.mean(np.abs(np.diff(t_fs)))) * 1e-15  # fs to seconds
+                    else:
+                        dt_mean = 1.0
+                
+                # Perform FFT
+                sig = time_series - np.mean(time_series)
                 N = sig.size
                 spec = np.fft.rfft(sig)
-                freq = np.fft.rfftfreq(N, d=dt_ns)
-                power = np.abs(spec)
-                fft_result = {"freq_ghz": freq, "power": power}
+                freq = np. fft.rfftfreq(N, d=dt_mean)  # frequency in Hz
+                power = np. abs(spec)
+                fft_result = {"freq_hz": freq, "power": power}
+                
+                logger.info(f"FFT:  N={N}, dt_mean={dt_mean:.6f}s, freq_range=[{freq[0]:.3e}, {freq[-1]:.3e}] Hz")
             self.progress.emit(90)
 
             out = {
