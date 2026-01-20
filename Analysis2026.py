@@ -1232,33 +1232,32 @@ class TOFExplorer(QMainWindow):
                 logger.info("Auto-watch: No changes detected")
 
         def _append_new_files(self, new_file_paths):
-        """Incrementally load and append new TOF files to existing data"""
-        if not self.data:
-            self._start_loading(self.folder)
-            return
+            if not self.data:
+                self._start_loading(self.folder)
+                return
         
-        try:
-            self.progress_label.setText(f"Loading {len(new_file_paths)} new files...")
-            self.pbar.setValue(10)
+            try:
+                self.progress_label.setText(f"Loading {len(new_file_paths)} new files...")
+                self.pbar.setValue(10)
             
-            loader = FastLoader(self.folder)
-            analog_list = []
-            counting_list = []
+                loader = FastLoader(self.folder)
+                analog_list = []
+                counting_list = []
             
-            for i, fpath in enumerate(new_file_paths):
-                try:
-                    df = loader._read_tof_like_old(fpath)
-                    if df. shape[1] < 2:
-                        logger.warning(f"{fpath} has fewer than 2 columns — skipping")
+                for i, fpath in enumerate(new_file_paths):
+                    try:
+                        df = loader._read_tof_like_old(fpath)
+                        if df. shape[1] < 2:
+                            logger.warning(f"{fpath} has fewer than 2 columns — skipping")
+                            continue
+                        analog_list.append(df. iloc[:, 1]. to_numpy())
+                        if df.shape[1] > 2:
+                            counting_list. append(df.iloc[:, 2].to_numpy())
+                        else:
+                            counting_list. append(np.zeros_like(self.data["tof"]))
+                    except Exception as e:
+                        logger.warning(f"Failed to parse {fpath}: {e} — skipping")
                         continue
-                    analog_list.append(df. iloc[:, 1]. to_numpy())
-                    if df.shape[1] > 2:
-                        counting_list. append(df.iloc[:, 2].to_numpy())
-                    else:
-                        counting_list. append(np.zeros_like(self.data["tof"]))
-                except Exception as e:
-                    logger.warning(f"Failed to parse {fpath}: {e} — skipping")
-                    continue
                 
                 self.pbar.setValue(int(10 + 40 * (i + 1) / len(new_file_paths)))
             
