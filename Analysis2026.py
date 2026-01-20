@@ -401,14 +401,42 @@ class AnalysisWorker(QThread):
             S = np.sum(rfCNT[:, roi_min:roi_max], axis=1)
             self.progress.emit(65)
 
+            # Initial guesses for fitting
             if model_name == "one_exp":
                 p0 = [0, 30, 1000, 30, 10, 5]
             elif model_name == "two_exp":
                 p0 = [0, 30, 1000, 10000, 100, 40, 0, 5]
-            else:
+            else:  # two_exp1
                 p0 = [0, 30, 700, 7000, 100, 40, 5]
-            p_full = np.asarray(p0, dtype=float)
+            
+            # ACTUAL CURVE FITTING
+            p_full = None
             pcov = None
+            perr = None
+            fit_success = False
+            
+            try:
+                if model_name == "one_exp":
+                    fitfunc = AnalysisWindow.one_exp
+                elif model_name == "two_exp":
+                    fitfunc = AnalysisWindow. two_exp
+                else:  
+                    fitfunc = AnalysisWindow.two_exp1
+                
+                # Perform the fit
+                p_full, pcov = curve_fit(fitfunc, t_fs, S, p0, maxfev=10000)
+                perr = np.sqrt(np. diag(pcov))
+                fit_success = True
+                
+                logger.info(f"Fit successful with model: {model_name}")
+                logger.info(f"Fitted parameters: {p_full}")
+                logger. info(f"Parameter errors: {perr}")
+                
+            except Exception as e:
+                logger.warning(f"Curve fitting failed: {e}, using initial guesses")
+                p_full = np.asarray(p0, dtype=float)
+                perr = np.zeros_like(p_full)
+            
             self.progress.emit(80)
 
             fft_result = None
@@ -433,13 +461,16 @@ class AnalysisWorker(QThread):
                 "rfCNT": rfCNT,
                 "rfAVG": rfAVG,
                 "edge_positions": edge_positions,
-                "fitted_edge": fitted_edge,
+                "fitted_edge":  fitted_edge,
                 "S": S,
-                "p": p_full,
+                "p":  p_full,
                 "pcov": pcov,
+                "perr": perr,
+                "fit_success": fit_success,
                 "t_fs": t_fs,
-                "fft": fft_result,
+                "fft":  fft_result,
                 "model_name": model_name,
+                "Npts": len(t_fs) if hasattr(t_fs, '__len__') else 1,
             }
             self.progress.emit(100)
             self.finished.emit(out)
@@ -733,11 +764,36 @@ class AnalysisWindow(QMainWindow):
     def _on_analysis_finished(self, result):
         self.btn_run.setEnabled(True)
         if "error" in result:
-            self.status.setText(f"Error: {result['error']}")
+            self.status. setText(f"Error: {result['error']}")
             QMessageBox.critical(self, "Analysis Error", result["error"])
             return
+        
         self._last_analysis = result
-        self.status.setText("Analysis complete")
+        
+        # Display fit results
+        if result. get("fit_success", False):
+            p = result["p"]
+            perr = result["perr"]
+            model = result["model_name"]
+            
+            # Build fit results message
+            msg = f"Fit successful ({model}):\n\n"
+            
+            if model == "one_exp":
+                param_names = ["t0", "sig", "t1", "A1", "A3", "B"]
+            elif model == "two_exp":
+                param_names = ["t0", "sig", "t1", "t2", "A1", "A2", "A3", "B"]
+            else:  # two_exp1
+                param_names = ["t0", "sig", "t1", "t2", "A1", "A2", "B"]
+            
+            for name, val, err in zip(param_names, p, perr):
+                msg += f"{name} = {val:.3f} ± {err:.3f}\n"
+            
+            logger.info(msg)
+            self.status.setText("Analysis complete - Fit successful")
+        else:
+            self. status.setText("Analysis complete - Fit failed (using initial guess)")
+        
         self._create_or_update_artists(result)
 
     # Pan/zoom
