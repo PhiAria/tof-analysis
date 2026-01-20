@@ -1261,48 +1261,48 @@ class TOFExplorer(QMainWindow):
                 
                 self.pbar.setValue(int(10 + 40 * (i + 1) / len(new_file_paths)))
             
-            if not analog_list:
-                logger. warning("No valid new files to append")
-                self.progress_label.setText("Idle")
+                if not analog_list:
+                    logger. warning("No valid new files to append")
+                    self.progress_label.setText("Idle")
+                    self.pbar.setValue(100)
+                    return
+            
+                new_analog = np.vstack(analog_list)
+                new_counting = np. vstack(counting_list)
+            
+                self.pbar.setValue(60)
+            
+                self.data["analog"] = np. vstack([self.data["analog"], new_analog])
+                self.data["counting"] = np.vstack([self.data["counting"], new_counting])
+            
+                self.pbar.setValue(80)
+            
+                cache_file = os.path.join(self.folder, "processed_cache.npz")
+                np.savez_compressed(
+                    cache_file,
+                    tof=self.data["tof"],
+                    analog=self.data["analog"],
+                    counting=self.data["counting"]
+                )
+            
+                self.pbar.setValue(90)
+            
+                n_files = self.data["analog"].shape[0]
+                self.spin_ymax.blockSignals(True)
+                self.spin_ymax.setMaximum(n_files)
+                self.spin_ymax. setValue(n_files)
+                self.spin_ymax.blockSignals(False)
+            
+                self.update_plot()
+            
                 self.pbar.setValue(100)
-                return
+                self.progress_label.setText(f"Idle (+{len(new_file_paths)} files)")
+                logger.info(f"Successfully appended {len(new_file_paths)} new files")
             
-            new_analog = np.vstack(analog_list)
-            new_counting = np. vstack(counting_list)
-            
-            self.pbar.setValue(60)
-            
-            self.data["analog"] = np. vstack([self.data["analog"], new_analog])
-            self.data["counting"] = np.vstack([self.data["counting"], new_counting])
-            
-            self.pbar.setValue(80)
-            
-            cache_file = os.path.join(self.folder, "processed_cache.npz")
-            np.savez_compressed(
-                cache_file,
-                tof=self.data["tof"],
-                analog=self.data["analog"],
-                counting=self.data["counting"]
-            )
-            
-            self.pbar.setValue(90)
-            
-            n_files = self.data["analog"].shape[0]
-            self.spin_ymax.blockSignals(True)
-            self.spin_ymax.setMaximum(n_files)
-            self.spin_ymax. setValue(n_files)
-            self.spin_ymax.blockSignals(False)
-            
-            self.update_plot()
-            
-            self.pbar.setValue(100)
-            self.progress_label.setText(f"Idle (+{len(new_file_paths)} files)")
-            logger.info(f"Successfully appended {len(new_file_paths)} new files")
-            
-        except Exception as e: 
-            logger.exception("Failed to append new files")
-            self.progress_label.setText("Error appending files")
-            QMessageBox.warning(self, "Append Error", f"Failed to append new files: {e}\n\nTry full reload.")
+            except Exception as e: 
+                logger.exception("Failed to append new files")
+                self.progress_label.setText("Error appending files")
+                QMessageBox.warning(self, "Append Error", f"Failed to append new files: {e}\n\nTry full reload.")
 
     def update_plot(self):
         if not self.data or self._updating:
