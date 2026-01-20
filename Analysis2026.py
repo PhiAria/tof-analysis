@@ -51,7 +51,7 @@ DEFAULT_SETTINGS = {
         "Residuals": {"ylim": {"ymin": None, "ymax": None}},
     },
     "fit": {
-        "t0_fixed_mm": 142.298,
+        "t0_fixed_mm": 142.378,
         "t0_optimisation": False,
     },
     "data": {
@@ -392,8 +392,6 @@ class AnalysisWorker(QThread):
             rM[n, :] = np.roll(M[n, :], int(edge[0] - edge[n]))
         return rM
     
-    
-    @staticmethod
 
     def run(self):
         try:
@@ -429,7 +427,6 @@ class AnalysisWorker(QThread):
             self.progress.emit(35)
 
             ref = int(round(edge_positions[0])) if edge_positions.size > 0 else 0
-            shifts = np.round(ref - edge_positions).astype(int)
             # Use np.roll-based correction (matches reference notebook)
             rfCNT = self.correct_pump_charge(fCNT, edge_positions)
             rfAVG = self.correct_pump_charge(fAVG, edge_positions)
@@ -894,7 +891,7 @@ class AnalysisWindow(QMainWindow):
             "Raw Avg": {"arr": -self.data["analog"], "xaxis": self.TOF},
             "Folded": {"arr": fCNT, "xaxis": self.TOF},
             "SC Corrected": {"arr": rfCNT, "xaxis": self.TOF},
-            "FFT": {"x": fft["freq_ghz"] if fft else np.array([]), "y": fft["power"] if fft else np.array([])},
+            "FFT": {"x": fft["freq_hz"] if fft else np.array([]), "y": fft["power"] if fft else np.array([])},
             "Dynamics Log": {"x": t_fs, "y": S},
             "Dynamics Lin": {"x": t_fs, "y": S},
             "Residuals": {"x": t_fs, "y": S - self.two_exp1(t_fs, *p) if p is not None and len(p) >= 7 else np.zeros_like(t_fs)},
