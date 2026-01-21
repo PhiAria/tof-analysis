@@ -1599,6 +1599,10 @@ class TOFExplorer(QMainWindow):
         self.btn_analyze.setEnabled(False)
         self.btn_analyze.clicked.connect(self.open_analysis)
         v.addWidget(self.btn_analyze)
+        self.btn_export_pdf = QPushButton("Export Plot as PDF")
+        self.btn_export_pdf.setEnabled(False)  # Enable after data loads
+        self.btn_export_pdf.clicked.connect(self._export_plot_to_pdf)
+        v.addWidget(self.btn_export_pdf)
 
         v.addSpacing(20)
 
@@ -1611,9 +1615,7 @@ class TOFExplorer(QMainWindow):
         dg.addWidget(QLabel("Mode:"))
         dg.addWidget(self.mode_combo)
 
-        self.chk_normalize = QCheckBox("Normalize by Row Mean")
-        self.chk_normalize.stateChanged.connect(self.update_plot)
-        dg.addWidget(self.chk_normalize)
+
 
         self.chk_calibrate = QCheckBox("Calibrate axis")
         self.chk_calibrate.stateChanged.connect(lambda *_: (self._axis_mode_changed(force=False), self.update_plot()))
@@ -1858,6 +1860,7 @@ class TOFExplorer(QMainWindow):
 
         self.data = data
         self.btn_analyze.setEnabled(True)
+        self.btn_export_pdf.setEnabled(True)
 
         self._init_spinboxes()
         self._axis_mode_changed(force=True)
@@ -2022,10 +2025,6 @@ class TOFExplorer(QMainWindow):
                 Sign = 1.0
             intensity *= Sign
 
-            if self.chk_normalize.isChecked():
-                row_means = np.abs(np.mean(intensity, axis=1, keepdims=True))
-                row_means[row_means == 0] = 1.0
-                intensity = intensity / row_means
 
             axis = self._compute_axis(tof)
 
@@ -2132,6 +2131,16 @@ class TOFExplorer(QMainWindow):
             return
         self._analysis_window = AnalysisWindow(self.folder, self.data, main_window=self)
         self._analysis_window.show()
+
+    def _export_plot_to_pdf(self):
+        """Export the current viewer plot to PDF file"""
+        if not self.data: 
+            QMessageBox.warning(self, "No Data", "Load data before exporting")
+            return
+        
+        # Suggest filename based on folder name
+        folder_name = os.path.basename(self.folder) if self.folder else "tof_plot"
+        default_filename = f"{folder_name}_viewer.pdf"
 
     def closeEvent(self, event):
         reply = QMessageBox.question(
