@@ -2141,6 +2141,46 @@ class TOFExplorer(QMainWindow):
         # Suggest filename based on folder name
         folder_name = os.path.basename(self.folder) if self.folder else "tof_plot"
         default_filename = f"{folder_name}_viewer.pdf"
+        
+        filename, _ = QFileDialog.getSaveFileName(
+            self,
+            "Export Plot as PDF",
+            default_filename,
+            "PDF Files (*.pdf)"
+        )
+        
+        if not filename:
+            return  # User cancelled
+        
+        try:
+            # Save the entire figure with all subplots
+            self.figure. savefig(
+                filename,
+                format='pdf',
+                bbox_inches='tight',
+                dpi=300,
+                metadata={
+                    'Title': f'TOF Analysis - {os.path.basename(self.folder)}',
+                    'Author': 'TOF Explorer 2026',
+                    'Subject': 'Time-of-Flight Spectroscopy Data',
+                    'Creator': 'Analysis2026.py'
+                }
+            )
+            
+            QMessageBox.information(
+                self,
+                "Export Successful",
+                f"Plot saved to:\n{filename}"
+            )
+            logger.info(f"Exported plot to PDF: {filename}")
+            
+        except Exception as e: 
+            QMessageBox.critical(
+                self,
+                "Export Failed",
+                f"Failed to export plot:\n{str(e)}"
+            )
+            logger.exception("Failed to export plot to PDF")
 
     def closeEvent(self, event):
         reply = QMessageBox.question(
