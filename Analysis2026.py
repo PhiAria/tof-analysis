@@ -2288,31 +2288,31 @@ class TOFExplorer(QMainWindow):
         self.data["analog"] = self._original_data["analog"].copy()
         self.data["counting"] = self._original_data["counting"].copy()
         
-        else:
-            # Total average mode - compute average from baseline ROI
-            baseline_avg_analog = np.mean(baseline_analog[file_start:file_end, :], axis=0)
-            baseline_avg_counting = np.mean(baseline_counting[file_start:file_end, :], axis=0)
-            
-            # Subtract from ALL files in main data
-            self.data["analog"] -= baseline_avg_analog
-            self.data["counting"] -= baseline_avg_counting
-            
-            logger.info(
-                f"Baseline subtraction successfully applied and active "
-                f"(Total average mode, baseline computed from files {file_start}-{file_end}, "
-                f"subtracted from all main data files)"
-            )
-                baseline_avg_analog = np.mean(baseline_analog[file_start:file_end, :], axis=0)
-                baseline_avg_counting = np.mean(baseline_counting[file_start:file_end, :], axis=0)
-                
+        try:
+            if file_by_file:
+                # File-by-file subtraction
                 for i in range(file_start, file_end):
-                    if i < self.data["analog"].shape[0]:
-                        self.data["analog"][i, :] -= baseline_avg_analog
-                        self.data["counting"][i, :] -= baseline_avg_counting
+                    if i < baseline_analog.shape[0] and i < self.data["analog"].shape[0]:
+                        self.data["analog"][i, :] -= baseline_analog[i, :]
+                        self.data["counting"][i, :] -= baseline_counting[i, :]
                 
                 logger.info(
                     f"Baseline subtraction successfully applied and active "
-                    f"(Total average mode, files {file_start}-{file_end})"
+                    f"(File-by-file mode, files {file_start}-{file_end})"
+                )
+            else:
+                # Total average mode - compute average from baseline ROI
+                baseline_avg_analog = np.mean(baseline_analog[file_start:file_end, :], axis=0)
+                baseline_avg_counting = np.mean(baseline_counting[file_start:file_end, :], axis=0)
+                
+                # Subtract from ALL files in main data
+                self.data["analog"] -= baseline_avg_analog
+                self.data["counting"] -= baseline_avg_counting
+                
+                logger.info(
+                    f"Baseline subtraction successfully applied and active "
+                    f"(Total average mode, baseline computed from files {file_start}-{file_end}, "
+                    f"subtracted from all main data files)"
                 )
             
             # Enable reset button
@@ -2324,6 +2324,7 @@ class TOFExplorer(QMainWindow):
         except Exception as e:
             logger.exception(f"Baseline subtraction failed: {e}")
             QMessageBox.critical(self, "Subtraction Error", f"Failed to apply subtraction:\n{str(e)}")
+
     
     def _reset_baseline(self):
         """Reset to original data (before baseline subtraction)"""
