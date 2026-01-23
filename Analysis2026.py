@@ -1415,12 +1415,20 @@ class BaselineWindow(QMainWindow):
             if denom == 0:
                 denom = 1.0
             plotted = data_filtered / denom
-            
+
             # Downsample if needed
-            if plotted.shape[1] > MAX_DISPLAY_COLS:
-                step = max(1, plotted.shape[1] // MAX_DISPLAY_COLS)
-                plotted = plotted[:, ::step]
+            if data_filtered.shape[1] > MAX_DISPLAY_COLS:
+                step = max(1, data_filtered.shape[1] // MAX_DISPLAY_COLS)
+                data_downsampled = data_filtered[:, ::step]
                 tof_filtered = tof_filtered[::step]
+            else:
+                data_downsampled = data_filtered
+            
+            # Normalize AFTER determining what to plot
+            denom = float(np.abs(np.max(data_downsampled))) if data_downsampled.size else 1.0
+            if denom == 0:
+                denom = 1.0
+            plotted = data_downsampled / denom
             
             file_indices = np.arange(file_start, file_end)
             
@@ -1435,22 +1443,14 @@ class BaselineWindow(QMainWindow):
             self.ax_main.set_xlabel("TOF (ns)")
             self.ax_main.set_ylabel("File Index")
             
-            # Profiles
+            # Profiles - use unnormalized data
             self.ax_hprof.clear()
             self.ax_vprof.clear()
             plt.setp(self.ax_hprof.get_xticklabels(), visible=False)
             plt.setp(self.ax_vprof.get_yticklabels(), visible=False)
             
-            hprof = np.mean(plotted, axis=0) if plotted.size else np.array([])
-            vprof = np.mean(plotted, axis=1) if plotted.size else np.array([])
-            
-            if hprof.size:
-                self.ax_hprof.plot(tof_filtered, hprof, "k-", lw=0.5)
-                self.ax_hprof.set_xlim(float(np.min(tof_filtered)), float(np.max(tof_filtered)))
-            
-            if vprof.size:
-                self.ax_vprof.plot(vprof, file_indices, "k-", lw=0.5)
-                self.ax_vprof.set_ylim(file_start, file_end)
+            hprof = np.mean(data_downsampled, axis=0) if data_downsampled.size else np.array([])
+            vprof = np.mean(data_downsampled, axis=1) if data_downsampled.size else np.array([])
             
             # Colorbar
             try:
@@ -2080,7 +2080,40 @@ class TOFExplorer(QMainWindow):
             vprof = np.mean(prof_data, axis=1) if prof_data.size else np.array([])
 
             if hprof.size and x_full.size == hprof.size:
-                self.ax_hprof.plot(x_full, hprof, "k-", lw=0.5)
+                # Plot current data profile
+                self.ax_hprof.plot(x_full, hprof, "k-", lw=0.5, label='Current')
+                
+                # If baseline subtraction is active, show original (red) and baseline (blue)
+                if self._original_data is not None and self._baseline_data is not None:
+                    # Original data profile
+                    orig_intensity = self._original_data["analog"].copy() if mode == 0 else self._original_data["counting"].copy()
+                    orig_intensity *= Sign
+                    orig_sliced = orig_intensity[ymin:ymax, :][:, idx_x]
+                    if orig_sliced.shape[1] != prof_data.shape[1]:
+                        step = max(1, sliced_data.shape[1] // MAX_DISPLAY_COLS)
+                        orig_prof_data = orig_sliced[:, ::step]
+                    else:
+                        orig_prof_data = orig_sliced
+                    orig_hprof = np.mean(orig_prof_data, axis=0) if orig_prof_data.size else np.array([])
+                    if orig_hprof.size:
+                        self.ax_hprof.plot(x_full, orig_hprof, "r-", lw=0.5, alpha=0.7, label='Original')
+                    
+                    # Baseline profile  
+                    base_intensity = self._baseline_data["analog"].copy() if mode == 0 else self._baseline_data["counting"].copy()
+                    base_intensity *= Sign
+                    if base_intensity.shape[0] > 0:
+                        base_sliced = base_intensity[min(ymin, base_intensity.shape[0]-1):min(ymax, base_intensity.shape[0]), :][:, idx_x]
+                        if base_sliced.shape[1] != prof_data.shape[1]:
+                            step = max(1, sliced_data.shape[1] // MAX_DISPLAY_COLS)
+                            base_prof_data = base_sliced[:, ::step]
+                        else:
+                            base_prof_data = base_sliced
+                        base_hprof = np.mean(base_prof_data, axis=0) if base_prof_data.size else np.array([])
+                        if base_hprof.size:
+                            self.ax_hprof.plot(x_full, base_hprof, "b-", lw=0.5, alpha=0.7, label='Baseline')
+                    
+                    self.ax_hprof.legend(loc='upper right', fontsize=8)
+                
                 self.ax_hprof.set_xlim(float(np.min(x_full)), float(np.max(x_full)))
 
             if vprof.size:
@@ -2223,8 +2256,6 @@ class TOFExplorer(QMainWindow):
                 self._baseline_loader.deleteLater()
                 self._baseline_loader = None
         
-        self._baseline_loader.finished.connect(on_baseline_loaded)
-        self._baseline_loader.start()
     
     
     def _apply_baseline_subtraction(self, params):
