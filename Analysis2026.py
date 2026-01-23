@@ -1452,6 +1452,15 @@ class BaselineWindow(QMainWindow):
             hprof = np.mean(data_downsampled, axis=0) if data_downsampled.size else np.array([])
             vprof = np.mean(data_downsampled, axis=1) if data_downsampled.size else np.array([])
             
+            # Plot profiles
+            if hprof.size and tof_filtered.size == hprof.size:
+                self.ax_hprof.plot(tof_filtered, hprof, "k-", lw=0.5)
+                self.ax_hprof.set_xlim(float(np.min(tof_filtered)), float(np.max(tof_filtered)))
+            
+            if vprof.size:
+                self.ax_vprof.plot(vprof, file_indices, "k-", lw=0.5)
+                self.ax_vprof.set_ylim(file_start, file_end)
+            
             # Colorbar
             try:
                 self.ax_cbar.cla()
