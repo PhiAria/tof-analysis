@@ -1182,6 +1182,319 @@ class AnalysisWindow(QMainWindow):
         pass
 
 
+class BaselineWindow(QMainWindow):
+    """Window for baseline selection and subtraction configuration"""
+    
+    def __init__(self, parent, baseline_folder, baseline_data):
+        super().__init__()
+        self.setWindowTitle(f"Baseline Subtraction: {os.path.basename(baseline_folder)}")
+        self.resize(1200, 800)
+        
+        self.parent_window = parent
+        self.baseline_folder = baseline_folder
+        self.baseline_data = baseline_data
+        self.baseline_tof = baseline_data["tof"]
+        self.baseline_analog = baseline_data["analog"]
+        self.baseline_counting = baseline_data["counting"]
+        
+        self._updating = False
+        self.cbar = None
+        self._current_mesh = None
+        
+        self._setup_ui()
+        self._init_baseline_view()
+        
+    def _setup_ui(self):
+        central = QWidget()
+        self.setCentralWidget(central)
+        layout = QHBoxLayout(central)
+        
+        # Left panel: controls
+        layout.addLayout(self._create_controls(), 1)
+        
+        # Right panel: viewer
+        layout.addLayout(self._create_viewer(), 4)
+    
+    def _create_controls(self):
+        v = QVBoxLayout()
+        
+        # ROI Selection Group
+        roi_group = QGroupBox("Baseline ROI (File Index)")
+        roi_layout = QGridLayout()
+        
+        n_files = self.baseline_analog.shape[0]
+        
+        self.spin_file_start = QSpinBox()
+        self.spin_file_start.setRange(0, max(0, n_files - 1))
+        self.spin_file_start.setValue(0)
+        self.spin_file_start.valueChanged.connect(self._update_baseline_view)
+        
+        self.spin_file_end = QSpinBox()
+        self.spin_file_end.setRange(1, n_files)
+        self.spin_file_end.setValue(n_files)
+        self.spin_file_end.valueChanged.connect(self._update_baseline_view)
+        
+        roi_layout.addWidget(QLabel("File Start:"), 0, 0)
+        roi_layout.addWidget(self.spin_file_start, 0, 1)
+        roi_layout.addWidget(QLabel("File End:"), 1, 0)
+        roi_layout.addWidget(self.spin_file_end, 1, 1)
+        
+        roi_group.setLayout(roi_layout)
+        v.addWidget(roi_group)
+        
+        # Subtraction Mode Group
+        mode_group = QGroupBox("Subtraction Mode")
+        mode_layout = QVBoxLayout()
+        
+        self.chk_file_by_file = QCheckBox("File-by-file subtraction")
+        self.chk_file_by_file.setChecked(False)
+        self.chk_file_by_file.stateChanged.connect(self._on_mode_changed)
+        mode_layout.addWidget(self.chk_file_by_file)
+        
+        self.label_mode_info = QLabel("Mode: Total Average")
+        self.label_mode_info.setWordWrap(True)
+        mode_layout.addWidget(self.label_mode_info)
+        
+        mode_group.setLayout(mode_layout)
+        v.addWidget(mode_group)
+        
+        # Display mode
+        display_group = QGroupBox("Display")
+        dg = QVBoxLayout()
+        
+        self.mode_combo = QComboBox()
+        self.mode_combo.addItems(["Averaging (Analog)", "Counting"])
+        self.mode_combo.currentIndexChanged.connect(self._update_baseline_view)
+        dg.addWidget(QLabel("Mode:"))
+        dg.addWidget(self.mode_combo)
+        
+        display_group.setLayout(dg)
+        v.addWidget(display_group)
+        
+        # Visualization limits (TOF axis - for display only)
+        viz_group = QGroupBox("Visualization Limits (Display Only)")
+        viz_layout = QGridLayout()
+        
+        self.spin_tof_min = QDoubleSpinBox()
+        self.spin_tof_min.setDecimals(0)
+        self.spin_tof_min.setRange(-1e12, 1e12)
+        self.spin_tof_min.setValue(float(np.nanmin(self.baseline_tof)))
+        self.spin_tof_min.valueChanged.connect(self._update_baseline_view)
+        
+        self.spin_tof_max = QDoubleSpinBox()
+        self.spin_tof_max.setDecimals(0)
+        self.spin_tof_max.setRange(-1e12, 1e12)
+        self.spin_tof_max.setValue(float(np.nanmax(self.baseline_tof)))
+        self.spin_tof_max.valueChanged.connect(self._update_baseline_view)
+        
+        viz_layout.addWidget(QLabel("TOF min:"), 0, 0)
+        viz_layout.addWidget(self.spin_tof_min, 0, 1)
+        viz_layout.addWidget(QLabel("TOF max:"), 1, 0)
+        viz_layout.addWidget(self.spin_tof_max, 1, 1)
+        
+        viz_group.setLayout(viz_layout)
+        v.addWidget(viz_group)
+        
+        v.addSpacing(20)
+        
+        # Action buttons
+        self.btn_apply = QPushButton("Apply Subtraction")
+        self.btn_apply.clicked.connect(self._apply_subtraction)
+        v.addWidget(self.btn_apply)
+        
+        self.btn_cancel = QPushButton("Cancel")
+        self.btn_cancel.clicked.connect(self._cancel)
+        v.addWidget(self.btn_cancel)
+        
+        self.status_label = QLabel("Ready")
+        self.status_label.setWordWrap(True)
+        v.addWidget(self.status_label)
+        
+        v.addStretch()
+        return v
+    
+    def _create_viewer(self):
+        v = QVBoxLayout()
+        self.figure = plt.figure(figsize=(10, 8))
+        self.gs = GridSpec(2, 2, figure=self.figure, width_ratios=[8, 2], 
+                          height_ratios=[2, 8], wspace=0.0, hspace=0.0)
+        self.ax_hprof = self.figure.add_subplot(self.gs[0, 0])
+        self.ax_main = self.figure.add_subplot(self.gs[1, 0], sharex=self.ax_hprof)
+        self.ax_vprof = self.figure.add_subplot(self.gs[1, 1], sharey=self.ax_main)
+        self.ax_cbar = self.figure.add_subplot(self.gs[0, 1])
+        plt.setp(self.ax_hprof.get_xticklabels(), visible=False)
+        plt.setp(self.ax_vprof.get_yticklabels(), visible=False)
+        self.canvas = FigureCanvas(self.figure)
+        v.addWidget(self.canvas)
+        return v
+    
+    def _init_baseline_view(self):
+        """Initialize the baseline view on window creation"""
+        self._check_file_compatibility()
+        self._update_baseline_view()
+    
+    def _check_file_compatibility(self):
+        """Check if file-by-file mode is available"""
+        parent_files = self.parent_window.data["analog"].shape[0] if self.parent_window.data else 0
+        baseline_files = self.baseline_analog.shape[0]
+        
+        if baseline_files < parent_files:
+            self.chk_file_by_file.setEnabled(False)
+            self.chk_file_by_file.setChecked(False)
+            self.status_label.setText(
+                f"⚠️ File-by-file mode unavailable:\n"
+                f"Baseline has {baseline_files} files, "
+                f"main data has {parent_files} files.\n"
+                f"Only averaged subtraction available."
+            )
+            logger.warning(
+                f"Baseline has fewer files ({baseline_files}) than main data ({parent_files}). "
+                f"File-by-file mode disabled."
+            )
+        else:
+            self.chk_file_by_file.setEnabled(True)
+            self.status_label.setText("Ready")
+    
+    def _on_mode_changed(self, state):
+        """Handle subtraction mode change"""
+        if self.chk_file_by_file.isChecked():
+            if not self.chk_file_by_file.isEnabled():
+                QMessageBox.warning(
+                    self,
+                    "Mode Unavailable",
+                    "File-by-file subtraction is not available because the baseline "
+                    "has fewer files than the main data.\n\n"
+                    "Please use Total Average mode instead."
+                )
+                self.chk_file_by_file.setChecked(False)
+                return
+            self.label_mode_info.setText("Mode: File-by-file")
+        else:
+            self.label_mode_info.setText("Mode: Total Average")
+    
+    def _update_baseline_view(self):
+        """Update the baseline visualization"""
+        if self._updating:
+            return
+        
+        self._updating = True
+        try:
+            mode = self.mode_combo.currentIndex()
+            intensity = self.baseline_analog.copy() if mode == 0 else self.baseline_counting.copy()
+            
+            # Sign correction
+            try:
+                Sign = float(np.sign(intensity[0, np.argmax(np.abs(intensity[0, :]))]))
+                if Sign == 0:
+                    Sign = 1.0
+            except Exception:
+                Sign = 1.0
+            intensity *= Sign
+            
+            # Get TOF limits for visualization
+            tof_min = self.spin_tof_min.value()
+            tof_max = self.spin_tof_max.value()
+            
+            # Get file index limits
+            file_start = self.spin_file_start.value()
+            file_end = self.spin_file_end.value()
+            
+            if file_start >= file_end:
+                return
+            
+            # Filter by TOF
+            idx_tof = np.where((self.baseline_tof >= tof_min) & (self.baseline_tof <= tof_max))[0]
+            if idx_tof.size == 0:
+                idx_tof = np.arange(self.baseline_tof.size)
+            
+            tof_filtered = self.baseline_tof[idx_tof]
+            data_filtered = intensity[file_start:file_end, :][:, idx_tof]
+            
+            # Normalize
+            denom = float(np.abs(np.max(data_filtered))) if data_filtered.size else 1.0
+            if denom == 0:
+                denom = 1.0
+            plotted = data_filtered / denom
+            
+            # Downsample if needed
+            if plotted.shape[1] > MAX_DISPLAY_COLS:
+                step = max(1, plotted.shape[1] // MAX_DISPLAY_COLS)
+                plotted = plotted[:, ::step]
+                tof_filtered = tof_filtered[::step]
+            
+            file_indices = np.arange(file_start, file_end)
+            
+            # Clear and plot
+            self.ax_main.clear()
+            self._current_mesh = self.ax_main.pcolormesh(
+                tof_filtered, file_indices, plotted,
+                cmap="viridis", vmin=0.0, vmax=0.4, shading="auto"
+            )
+            self.ax_main.set_xlim(float(np.min(tof_filtered)), float(np.max(tof_filtered)))
+            self.ax_main.set_ylim(file_start, file_end)
+            self.ax_main.set_xlabel("TOF (ns)")
+            self.ax_main.set_ylabel("File Index")
+            
+            # Profiles
+            self.ax_hprof.clear()
+            self.ax_vprof.clear()
+            plt.setp(self.ax_hprof.get_xticklabels(), visible=False)
+            plt.setp(self.ax_vprof.get_yticklabels(), visible=False)
+            
+            hprof = np.mean(plotted, axis=0) if plotted.size else np.array([])
+            vprof = np.mean(plotted, axis=1) if plotted.size else np.array([])
+            
+            if hprof.size:
+                self.ax_hprof.plot(tof_filtered, hprof, "k-", lw=0.5)
+                self.ax_hprof.set_xlim(float(np.min(tof_filtered)), float(np.max(tof_filtered)))
+            
+            if vprof.size:
+                self.ax_vprof.plot(vprof, file_indices, "k-", lw=0.5)
+                self.ax_vprof.set_ylim(file_start, file_end)
+            
+            # Colorbar
+            try:
+                self.ax_cbar.cla()
+                self.cbar = self.figure.colorbar(self._current_mesh, cax=self.ax_cbar)
+            except Exception:
+                pass
+            
+            self.canvas.draw_idle()
+            
+        finally:
+            self._updating = False
+    
+    def _apply_subtraction(self):
+        """Apply baseline subtraction to parent data"""
+        file_start = self.spin_file_start.value()
+        file_end = self.spin_file_end.value()
+        file_by_file = self.chk_file_by_file.isChecked()
+        
+        if file_start >= file_end:
+            QMessageBox.warning(self, "Invalid ROI", "File Start must be less than File End")
+            return
+        
+        # Prepare subtraction parameters
+        subtraction_params = {
+            "baseline_data": self.baseline_data,
+            "file_start": file_start,
+            "file_end": file_end,
+            "file_by_file": file_by_file
+        }
+        
+        # Call parent's subtraction method
+        self.parent_window._apply_baseline_subtraction(subtraction_params)
+        
+        self.status_label.setText("✅ Subtraction applied!")
+    
+    def _cancel(self):
+        """Cancel and reset to original data"""
+        self.parent_window._reset_baseline()
+        self.close()
+
+
+
+
 class TOFExplorer(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -1191,6 +1504,9 @@ class TOFExplorer(QMainWindow):
         self.data = None
         self.folder = None
         self._analysis_window = None
+        self._baseline_window = None
+        self._baseline_data = None
+        self._original_data = None
 
         self._updating = False
         self.cbar = None
@@ -1257,6 +1573,16 @@ class TOFExplorer(QMainWindow):
         self.btn_export_pdf.setEnabled(False)  # Enable after data loads
         self.btn_export_pdf.clicked.connect(self._export_plot_to_pdf)
         v.addWidget(self.btn_export_pdf)
+
+        self.btn_load_baseline = QPushButton("Load Baseline")
+        self.btn_load_baseline.setEnabled(False)
+        self.btn_load_baseline.clicked.connect(self._load_baseline)
+        v.addWidget(self.btn_load_baseline)
+
+        self.btn_reset_baseline = QPushButton("Reset Baseline Subtraction")
+        self.btn_reset_baseline.setEnabled(False)
+        self.btn_reset_baseline.clicked.connect(self._reset_baseline)
+        v.addWidget(self.btn_reset_baseline)
 
         v.addSpacing(20)
 
@@ -1515,6 +1841,7 @@ class TOFExplorer(QMainWindow):
         self.data = data
         self.btn_analyze.setEnabled(True)
         self.btn_export_pdf.setEnabled(True)
+        self.btn_load_baseline.setEnabled(True)
 
         self._init_spinboxes()
         self._axis_mode_changed(force=True)
@@ -1836,6 +2163,134 @@ class TOFExplorer(QMainWindow):
             )
             logger.exception("Failed to export plot to PDF")
 
+
+    def _load_baseline(self):
+        """Load baseline data for subtraction"""
+        baseline_folder = QFileDialog.getExistingDirectory(self, "Select Baseline Folder")
+        if not baseline_folder:
+            return
+        
+        # Load baseline data
+        self.progress_label.setText("Loading baseline...")
+        self.pbar.setValue(10)
+        
+        loader = FastLoader(baseline_folder)
+        
+        def on_baseline_loaded(baseline_data):
+            self.pbar.setValue(50)
+            if "error" in baseline_data:
+                QMessageBox.critical(self, "Error Loading Baseline", baseline_data["error"])
+                self.progress_label.setText("Idle")
+                self.pbar.setValue(0)
+                return
+            
+            # Store baseline data
+            self._baseline_data = baseline_data
+            
+            # Preserve original data if not already preserved
+            if self._original_data is None:
+                self._original_data = {
+                    "analog": self.data["analog"].copy(),
+                    "counting": self.data["counting"].copy(),
+                    "tof": self.data["tof"].copy()
+                }
+                logger.info("Original data preserved for baseline subtraction")
+            
+            # Open baseline window
+            self._baseline_window = BaselineWindow(self, baseline_folder, baseline_data)
+            self._baseline_window.show()
+            
+            self.progress_label.setText("Idle")
+            self.pbar.setValue(100)
+            logger.info(f"Baseline loaded from: {baseline_folder}")
+        
+        loader.finished.connect(on_baseline_loaded)
+        loader.start()
+    
+    def _apply_baseline_subtraction(self, params):
+        """Apply baseline subtraction with given parameters"""
+        if self._original_data is None:
+            logger.error("Original data not available for subtraction")
+            return
+        
+        baseline_data = params["baseline_data"]
+        file_start = params["file_start"]
+        file_end = params["file_end"]
+        file_by_file = params["file_by_file"]
+        
+        baseline_analog = baseline_data["analog"]
+        baseline_counting = baseline_data["counting"]
+        
+        # Start with original data
+        self.data["analog"] = self._original_data["analog"].copy()
+        self.data["counting"] = self._original_data["counting"].copy()
+        
+        try:
+            if file_by_file:
+                # File-by-file subtraction
+                for i in range(file_start, file_end):
+                    if i < baseline_analog.shape[0] and i < self.data["analog"].shape[0]:
+                        self.data["analog"][i, :] -= baseline_analog[i, :]
+                        self.data["counting"][i, :] -= baseline_counting[i, :]
+                
+                logger.info(
+                    f"Baseline subtraction successfully applied and active "
+                    f"(File-by-file mode, files {file_start}-{file_end})"
+                )
+            else:
+                # Total average mode
+                baseline_avg_analog = np.mean(baseline_analog[file_start:file_end, :], axis=0)
+                baseline_avg_counting = np.mean(baseline_counting[file_start:file_end, :], axis=0)
+                
+                for i in range(file_start, file_end):
+                    if i < self.data["analog"].shape[0]:
+                        self.data["analog"][i, :] -= baseline_avg_analog
+                        self.data["counting"][i, :] -= baseline_avg_counting
+                
+                logger.info(
+                    f"Baseline subtraction successfully applied and active "
+                    f"(Total average mode, files {file_start}-{file_end})"
+                )
+            
+            # Enable reset button
+            self.btn_reset_baseline.setEnabled(True)
+            
+            # Update display
+            self.update_plot()
+            
+        except Exception as e:
+            logger.exception(f"Baseline subtraction failed: {e}")
+            QMessageBox.critical(self, "Subtraction Error", f"Failed to apply subtraction:\n{str(e)}")
+    
+    def _reset_baseline(self):
+        """Reset to original data (before baseline subtraction)"""
+        if self._original_data is None:
+            logger.info("No baseline to reset")
+            return
+        
+        # Restore original data
+        self.data["analog"] = self._original_data["analog"].copy()
+        self.data["counting"] = self._original_data["counting"].copy()
+        
+        # Clear baseline references
+        self._baseline_data = None
+        self._original_data = None
+        
+        # Disable reset button
+        self.btn_reset_baseline.setEnabled(False)
+        
+        # Close baseline window if open
+        if self._baseline_window is not None:
+            self._baseline_window.close()
+            self._baseline_window = None
+        
+        # Update display
+        self.update_plot()
+        
+        logger.info("Baseline subtraction reset - original data restored")
+
+
+    
     def closeEvent(self, event):
         reply = QMessageBox.question(
             self,
