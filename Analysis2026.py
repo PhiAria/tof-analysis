@@ -1714,13 +1714,37 @@ class TOFExplorer(QMainWindow):
     def _create_right_panel(self):
         v = QVBoxLayout()
         
-        # Add coordinate tracker at the top
-        coord_layout = QHBoxLayout()
+    def _create_right_panel(self):
+        v = QVBoxLayout()
+        
+        # Add coordinate tracker at the top - compact version
         self.coord_label = QLabel("X: --- | Y: ---")
-        self.coord_label.setStyleSheet("QLabel { font-family: monospace; padding: 5px; background-color: #f0f0f0; }")
-        coord_layout.addWidget(self.coord_label)
-        coord_layout.addStretch()
-        v.addLayout(coord_layout)
+        self.coord_label.setStyleSheet(
+            "QLabel { "
+            "font-family: monospace; "
+            "padding: 2px 5px; "
+            "background-color: #f0f0f0; "
+            "border: 1px solid #d0d0d0; "
+            "}"
+        )
+        self.coord_label.setMaximumHeight(25)  # Limit height to one line
+        v.addWidget(self.coord_label)
+        
+        self.figure = plt.figure(figsize=(10, 8))
+        self.gs = GridSpec(2, 2, figure=self.figure, width_ratios=[8, 2], height_ratios=[2, 8], wspace=0.0, hspace=0.0)
+        self.ax_hprof = self.figure.add_subplot(self.gs[0, 0])
+        self.ax_main = self.figure.add_subplot(self.gs[1, 0], sharex=self.ax_hprof)
+        self.ax_vprof = self.figure.add_subplot(self.gs[1, 1], sharey=self.ax_main)
+        self.ax_cbar = self.figure.add_subplot(self.gs[0, 1])
+        plt.setp(self.ax_hprof.get_xticklabels(), visible=False)
+        plt.setp(self.ax_vprof.get_yticklabels(), visible=False)
+        self.canvas = FigureCanvas(self.figure)
+        
+        # Connect mouse motion event
+        self.canvas.mpl_connect('motion_notify_event', self._on_mouse_move)
+        
+        v.addWidget(self.canvas)
+        return v
         
         self.figure = plt.figure(figsize=(10, 8))
         self.gs = GridSpec(2, 2, figure=self.figure, width_ratios=[8, 2], height_ratios=[2, 8], wspace=0.0, hspace=0.0)
@@ -2136,8 +2160,6 @@ class TOFExplorer(QMainWindow):
                         base_hprof = np.mean(base_prof_data, axis=0) if base_prof_data.size else np.array([])
                         if base_hprof.size:
                             self.ax_hprof.plot(x_full, base_hprof, "b-", lw=0.5, alpha=0.7, label='Baseline')
-                    
-                    self.ax_hprof.legend(loc='upper right', fontsize=8)
                     
                     self.ax_hprof.legend(loc='upper right', fontsize=8)
                 
