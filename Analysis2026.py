@@ -2255,6 +2255,9 @@ class TOFExplorer(QMainWindow):
                     self._baseline_loader.wait()
                 self._baseline_loader.deleteLater()
                 self._baseline_loader = None
+                
+        self._baseline_loader.finished.connect(on_baseline_loaded)
+        self._baseline_loader.start()
         
     
     
