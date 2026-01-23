@@ -1517,8 +1517,11 @@ class TOFExplorer(QMainWindow):
         self._baseline_data = None
         self._original_data = None
         self._baseline_loader = None
+        
+        self.coord_label = None  # Will be created in _create_right_panel
 
         self._updating = False
+        # ... rest of __init__
         self.cbar = None
         self._current_mesh = None
         self._current_mesh_shape = None
@@ -1710,6 +1713,15 @@ class TOFExplorer(QMainWindow):
 
     def _create_right_panel(self):
         v = QVBoxLayout()
+        
+        # Add coordinate tracker at the top
+        coord_layout = QHBoxLayout()
+        self.coord_label = QLabel("X: --- | Y: ---")
+        self.coord_label.setStyleSheet("QLabel { font-family: monospace; padding: 5px; background-color: #f0f0f0; }")
+        coord_layout.addWidget(self.coord_label)
+        coord_layout.addStretch()
+        v.addLayout(coord_layout)
+        
         self.figure = plt.figure(figsize=(10, 8))
         self.gs = GridSpec(2, 2, figure=self.figure, width_ratios=[8, 2], height_ratios=[2, 8], wspace=0.0, hspace=0.0)
         self.ax_hprof = self.figure.add_subplot(self.gs[0, 0])
@@ -1719,6 +1731,10 @@ class TOFExplorer(QMainWindow):
         plt.setp(self.ax_hprof.get_xticklabels(), visible=False)
         plt.setp(self.ax_vprof.get_yticklabels(), visible=False)
         self.canvas = FigureCanvas(self.figure)
+        
+        # Connect mouse motion event
+        self.canvas.mpl_connect('motion_notify_event', self._on_mouse_move)
+        
         v.addWidget(self.canvas)
         return v
 
@@ -2094,9 +2110,9 @@ class TOFExplorer(QMainWindow):
                 
                 # If baseline subtraction is active, show original (red) and baseline (blue)
                 if self._original_data is not None and self._baseline_data is not None:
-                    # Original data profile
+                    # Original data profile (use absolute values for display)
                     orig_intensity = self._original_data["analog"].copy() if mode == 0 else self._original_data["counting"].copy()
-                    orig_intensity *= Sign
+                    orig_intensity = np.abs(orig_intensity)  # Use absolute values
                     orig_sliced = orig_intensity[ymin:ymax, :][:, idx_x]
                     if orig_sliced.shape[1] != prof_data.shape[1]:
                         step = max(1, sliced_data.shape[1] // MAX_DISPLAY_COLS)
@@ -2107,9 +2123,9 @@ class TOFExplorer(QMainWindow):
                     if orig_hprof.size:
                         self.ax_hprof.plot(x_full, orig_hprof, "r-", lw=0.5, alpha=0.7, label='Original')
                     
-                    # Baseline profile  
+                    # Baseline profile (use absolute values for display)
                     base_intensity = self._baseline_data["analog"].copy() if mode == 0 else self._baseline_data["counting"].copy()
-                    base_intensity *= Sign
+                    base_intensity = np.abs(base_intensity)  # Use absolute values
                     if base_intensity.shape[0] > 0:
                         base_sliced = base_intensity[min(ymin, base_intensity.shape[0]-1):min(ymax, base_intensity.shape[0]), :][:, idx_x]
                         if base_sliced.shape[1] != prof_data.shape[1]:
@@ -2120,6 +2136,8 @@ class TOFExplorer(QMainWindow):
                         base_hprof = np.mean(base_prof_data, axis=0) if base_prof_data.size else np.array([])
                         if base_hprof.size:
                             self.ax_hprof.plot(x_full, base_hprof, "b-", lw=0.5, alpha=0.7, label='Baseline')
+                    
+                    self.ax_hprof.legend(loc='upper right', fontsize=8)
                     
                     self.ax_hprof.legend(loc='upper right', fontsize=8)
                 
@@ -2144,6 +2162,56 @@ class TOFExplorer(QMainWindow):
             self.progress_label.setText("Idle")
         finally:
             self._updating = False
+
+
+
+
+    def _on_mouse_move(self, event):
+        """Handle mouse motion to display coordinates"""
+        if event.inaxes == self.ax_main:
+            # Main plot coordinates
+            x_coord = event.xdata
+            y_coord = event.ydata
+            
+            if x_coord is not None and y_coord is not None:
+                # Format based on axis mode
+                axis_mode = self._axis_mode()
+                if axis_mode == "TOF":
+                    x_label = f"TOF: {x_coord:.2f} ns"
+                elif axis_mode == "KE":
+                    x_label = f"KE: {x_coord:.3f} eV"
+                else:  # BE
+                    x_label = f"BE: {x_coord:.3f} eV"
+                
+                self.coord_label.setText(f"{x_label} | File: {int(y_coord)}")
+        
+        elif event.inaxes == self.ax_hprof:
+            # Horizontal profile coordinates
+            x_coord = event.xdata
+            y_coord = event.ydata
+            
+            if x_coord is not None and y_coord is not None:
+                axis_mode = self._axis_mode()
+                if axis_mode == "TOF":
+                    x_label = f"TOF: {x_coord:.2f} ns"
+                elif axis_mode == "KE":
+                    x_label = f"KE: {x_coord:.3f} eV"
+                else:
+                    x_label = f"BE: {x_coord:.3f} eV"
+                
+                self.coord_label.setText(f"{x_label} | Intensity: {y_coord:.2e}")
+        
+        elif event.inaxes == self.ax_vprof:
+            # Vertical profile coordinates
+            x_coord = event.xdata
+            y_coord = event.ydata
+            
+            if x_coord is not None and y_coord is not None:
+                self.coord_label.setText(f"Intensity: {x_coord:.2e} | File: {int(y_coord)}")
+        
+        else:
+            # Not on any plot
+            self.coord_label.setText("X: --- | Y: ---")
 
     def open_analysis(self):
         if not self.data:
