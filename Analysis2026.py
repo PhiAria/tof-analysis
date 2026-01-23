@@ -2225,8 +2225,6 @@ class TOFExplorer(QMainWindow):
         
         self._baseline_loader.finished.connect(on_baseline_loaded)
         self._baseline_loader.start()
-        self._baseline_loader.finished.connect(on_baseline_loaded)
-        self._baseline_loader.start()
     
     
     def _apply_baseline_subtraction(self, params):
