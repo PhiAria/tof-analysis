@@ -2225,79 +2225,10 @@ class TOFExplorer(QMainWindow):
         
         self._baseline_loader.finished.connect(on_baseline_loaded)
         self._baseline_loader.start()
-        
-        def on_baseline_loaded(baseline_data):
-            self.pbar.setValue(50)
-            if "error" in baseline_data:
-                QMessageBox.critical(self, "Error Loading Baseline", baseline_data["error"])
-                self.progress_label.setText("Idle")
-                self.pbar.setValue(0)
-                # Clean up loader
-                if hasattr(self, '_baseline_loader'):
-                    self._baseline_loader.wait()
-                    self._baseline_loader.deleteLater()
-                    self._baseline_loader = None
-                return
-            
-            # Store baseline data
-            self._baseline_data = baseline_data
-            
-            # Preserve original data if not already preserved
-            if self._original_data is None:
-                self._original_data = {
-                    "analog": self.data["analog"].copy(),
-                    "counting": self.data["counting"].copy(),
-                    "tof": self.data["tof"].copy()
-                }
-                logger.info("Original data preserved for baseline subtraction")
-            
-            # Open baseline window
-            self._baseline_window = BaselineWindow(self, baseline_folder, baseline_data)
-            self._baseline_window.show()
-            
-            self.progress_label.setText("Idle")
-            self.pbar.setValue(100)
-            logger.info(f"Baseline loaded from: {baseline_folder}")
-            
-            # Clean up loader
-            if hasattr(self, '_baseline_loader'):
-                self._baseline_loader.wait()
-                self._baseline_loader.deleteLater()
-                self._baseline_loader = None
-        
         self._baseline_loader.finished.connect(on_baseline_loaded)
         self._baseline_loader.start()
-        
-        def on_baseline_loaded(baseline_data):
-            self.pbar.setValue(50)
-            if "error" in baseline_data:
-                QMessageBox.critical(self, "Error Loading Baseline", baseline_data["error"])
-                self.progress_label.setText("Idle")
-                self.pbar.setValue(0)
-                return
-            
-            # Store baseline data
-            self._baseline_data = baseline_data
-            
-            # Preserve original data if not already preserved
-            if self._original_data is None:
-                self._original_data = {
-                    "analog": self.data["analog"].copy(),
-                    "counting": self.data["counting"].copy(),
-                    "tof": self.data["tof"].copy()
-                }
-                logger.info("Original data preserved for baseline subtraction")
-            
-            # Open baseline window
-            self._baseline_window = BaselineWindow(self, baseline_folder, baseline_data)
-            self._baseline_window.show()
-            
-            self.progress_label.setText("Idle")
-            self.pbar.setValue(100)
-            logger.info(f"Baseline loaded from: {baseline_folder}")
-        
-        loader.finished.connect(on_baseline_loaded)
-        loader.start()
+    
+    def _apply_baseline_subtraction(self, params):
     
     def _apply_baseline_subtraction(self, params):
         """Apply baseline subtraction with given parameters"""
