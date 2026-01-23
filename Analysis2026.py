@@ -2363,9 +2363,10 @@ class TOFExplorer(QMainWindow):
         
         reply = QMessageBox.question(
             self,
-            "Delete Configuration?",
-            "Do you want to delete the saved configuration file?\n\n"
-            f"File: {CONFIG_PATH}",
+            "Delete Configuration and Cache?",
+            "Do you want to delete the saved configuration file and cache?\n\n"
+            f"Config: {CONFIG_PATH}\n"
+            f"Cache: processed_cache.npz files in data folders",
             QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel,
             QMessageBox.No,
         )
@@ -2374,10 +2375,29 @@ class TOFExplorer(QMainWindow):
             return
         elif reply == QMessageBox.Yes:
             try:
+                # Delete config file
                 if os.path.exists(CONFIG_PATH):
                     os.remove(CONFIG_PATH)
                     logger.info(f"Configuration file deleted: {CONFIG_PATH}")
+                
+                # Delete cache file from current folder
+                if self.folder:
+                    cache_file = os.path.join(self.folder, "processed_cache.npz")
+                    if os.path.exists(cache_file):
+                        os.remove(cache_file)
+                        logger.info(f"Cache file deleted: {cache_file}")
+                
+                # Delete baseline cache if exists
+                if hasattr(self, '_baseline_data') and self._baseline_data:
+                    baseline_folder = self._baseline_data.get("folder")
+                    if baseline_folder:
+                        baseline_cache = os.path.join(baseline_folder, "processed_cache.npz")
+                        if os.path.exists(baseline_cache):
+                            os.remove(baseline_cache)
+                            logger.info(f"Baseline cache deleted: {baseline_cache}")
+                            
             except Exception as e:
+                logger.exception(f"Error during cleanup: {e}")
                 QMessageBox.warning(self, "Deletion Failed", str(e))
         event.accept()
 
