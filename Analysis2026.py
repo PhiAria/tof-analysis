@@ -2087,8 +2087,11 @@ class TOFExplorer(QMainWindow):
             tof = self.data["tof"]
 
             # old-app sign
-
-            intensity = intensity * (-1)
+            if mode == 0:  # Force positive sign for counting mode
+                sign = -1
+            if mode == 1:  # Force positive sign for counting mode
+                sign = 1
+            intensity = intensity * sign
 
 
 
