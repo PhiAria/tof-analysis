@@ -1501,7 +1501,7 @@ class BaselineWindow(QMainWindow):
         self.status_label.setText("✅ Subtraction applied!")
 
 
-    
+
     def _load_profiles_only(self):
         """Load baseline profiles for display without applying subtraction"""
         file_start = self.spin_file_start.value()
@@ -1511,8 +1511,12 @@ class BaselineWindow(QMainWindow):
             QMessageBox.warning(self, "Invalid ROI", "File Start must be less than File End")
             return
         
-        # Store baseline data in parent without applying subtraction
+        # Store baseline data AND the ROI used
         self.parent_window._baseline_data = self.baseline_data
+        self.parent_window._baseline_roi = {  # ADD THESE 3 LINES
+            "file_start": file_start,
+            "file_end": file_end
+        }
         
         # Preserve original data if not already preserved
         if self.parent_window._original_data is None:
@@ -1551,6 +1555,7 @@ class TOFExplorer(QMainWindow):
         self._baseline_data = None
         self._original_data = None
         self._baseline_loader = None
+        self._baseline_roi = None 
         
         self.coord_label = None  # Will be created in _create_right_panel
 
@@ -2184,8 +2189,17 @@ class TOFExplorer(QMainWindow):
                     # Baseline profile (use absolute values for display)
                     base_intensity = self._baseline_data["analog"].copy() if mode == 0 else self._baseline_data["counting"].copy()
                     base_intensity = np.abs(base_intensity)  # Use absolute values
+                    
+                    # Use baseline ROI if specified, otherwise use current y-limits
+                    if self._baseline_roi is not None:
+                        roi_start = self._baseline_roi["file_start"]
+                        roi_end = self._baseline_roi["file_end"]
+                    else:
+                        roi_start = min(ymin, base_intensity.shape[0]-1)
+                        roi_end = min(ymax, base_intensity.shape[0])
+                    
                     if base_intensity.shape[0] > 0:
-                        base_sliced = base_intensity[min(ymin, base_intensity.shape[0]-1):min(ymax, base_intensity.shape[0]), :][:, idx_x]
+                        base_sliced = base_intensity[roi_start:roi_end, :][:, idx_x]
                         if base_sliced.shape[1] != prof_data.shape[1]:
                             step = max(1, sliced_data.shape[1] // MAX_DISPLAY_COLS)
                             base_prof_data = base_sliced[:, ::step]
@@ -2463,6 +2477,7 @@ class TOFExplorer(QMainWindow):
         # Clear baseline references
         self._baseline_data = None
         self._original_data = None
+        self._baseline_roi = None
         
         # Clean up loader if exists
         if hasattr(self, '_baseline_loader') and self._baseline_loader is not None:
