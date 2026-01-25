@@ -1298,6 +1298,10 @@ class BaselineWindow(QMainWindow):
         v.addSpacing(20)
         
         # Action buttons
+        self.btn_load_profiles = QPushButton("Load Profiles")
+        self.btn_load_profiles.clicked.connect(self._load_profiles_only)
+        v.addWidget(self.btn_load_profiles)
+        
         self.btn_apply = QPushButton("Apply Subtraction")
         self.btn_apply.clicked.connect(self._apply_subtraction)
         v.addWidget(self.btn_apply)
@@ -1495,6 +1499,38 @@ class BaselineWindow(QMainWindow):
         self.parent_window._apply_baseline_subtraction(subtraction_params)
         
         self.status_label.setText("✅ Subtraction applied!")
+
+
+    
+    def _load_profiles_only(self):
+        """Load baseline profiles for display without applying subtraction"""
+        file_start = self.spin_file_start.value()
+        file_end = self.spin_file_end.value()
+        
+        if file_start >= file_end:
+            QMessageBox.warning(self, "Invalid ROI", "File Start must be less than File End")
+            return
+        
+        # Store baseline data in parent without applying subtraction
+        self.parent_window._baseline_data = self.baseline_data
+        
+        # Preserve original data if not already preserved
+        if self.parent_window._original_data is None:
+            self.parent_window._original_data = {
+                "analog": self.parent_window.data["analog"].copy(),
+                "counting": self.parent_window.data["counting"].copy(),
+                "tof": self.parent_window.data["tof"].copy()
+            }
+            logger.info("Original data preserved for baseline profile display")
+        
+        # Update main window plot to show profiles
+        self.parent_window.update_plot()
+        
+        self.status_label.setText("✅ Baseline profiles loaded for display!")
+        logger.info(f"Baseline profiles loaded from files {file_start}-{file_end} (no subtraction applied)")
+    
+    def _cancel(self):
+    
     
     def _cancel(self):
         """Cancel and reset to original data"""
