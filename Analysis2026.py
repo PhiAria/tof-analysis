@@ -2434,8 +2434,8 @@ class TOFExplorer(QMainWindow):
             Sign_counting = float(np.sign(self._original_data["counting"][0, np.argmax(np.abs(self._original_data["counting"][0, :]))]))
             if Sign_counting == 0:
                 Sign_counting = 1.0
-            except Exception:
-                Sign_counting = 1.0
+        except Exception:
+            Sign_counting = 1.0
 
         baseline_analog *= Sign_analog
         baseline_counting *= Sign_counting
