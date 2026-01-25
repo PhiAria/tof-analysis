@@ -2095,6 +2095,7 @@ class TOFExplorer(QMainWindow):
                 Sign = 1.0
             if mode == 1:  # Force positive sign for counting mode
                 Sign = 1.0
+            intensity *= Sign
 
 
 
