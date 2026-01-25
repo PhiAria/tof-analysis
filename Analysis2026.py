@@ -2483,7 +2483,7 @@ class TOFExplorer(QMainWindow):
                 baseline_avg_counting = np.mean(baseline_counting[file_start:file_end, :], axis=0)
 
                 # Subtract from ALL files in main data
-                self.data["analog"] -= baseline_avg_analog
+                self.data["analog"] += baseline_avg_analog
                 self.data["counting"] -= baseline_avg_counting 
 
                 logger.info(
@@ -2492,7 +2492,6 @@ class TOFExplorer(QMainWindow):
                     f"subtracted from all main data files)"
                 )
 
-            self.data["analog"] *= -1
             # Enable reset button and refresh display
             self.btn_reset_baseline.setEnabled(True)
             self.update_plot()
