@@ -1528,9 +1528,7 @@ class BaselineWindow(QMainWindow):
         
         self.status_label.setText("✅ Baseline profiles loaded for display!")
         logger.info(f"Baseline profiles loaded from files {file_start}-{file_end} (no subtraction applied)")
-    
-    def _cancel(self):
-    
+
     
     def _cancel(self):
         """Cancel and reset to original data"""
