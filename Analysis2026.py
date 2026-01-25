@@ -2422,6 +2422,23 @@ class TOFExplorer(QMainWindow):
         #Make local copies of baseline arrays
         baseline_analog = baseline_data["analog"].copy()
         baseline_counting = baseline_data["counting"].copy()
+        # Sign correction so subtraction is correct in both modes
+            try:
+                Sign_analog = float(np.sign(self._original_data["analog"][0, np.argmax(np.abs(self._original_data["analog"][0, :]))]))
+                if Sign_analog == 0:
+                    Sign_analog = 1.0
+            except Exception:
+                Sign_analog = 1.0
+
+            try:
+                Sign_counting = float(np.sign(self._original_data["counting"][0, np.argmax(np.abs(self._original_data["counting"][0, :]))]))
+                if Sign_counting == 0:
+                    Sign_counting = 1.0
+            except Exception:
+                Sign_counting = 1.0
+
+            baseline_analog *= Sign_analog
+            baseline_counting *= Sign_counting
 
         # Compute sign convention from the ORIGINAL data (do not modify self.data here)
         try:
