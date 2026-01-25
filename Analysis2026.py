@@ -2471,6 +2471,10 @@ class TOFExplorer(QMainWindow):
                     f"(Total average mode, baseline computed from files {file_start}-{file_end}, "
                     f"subtracted from all main data files)"
                 )
+
+            # flip sign of the subtraction result
+            self.data["analog"] *= -1
+            self.data["counting"] *= -1
             
             # Enable reset button
             self.btn_reset_baseline.setEnabled(True)
