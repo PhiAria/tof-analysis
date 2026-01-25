@@ -2087,6 +2087,14 @@ class TOFExplorer(QMainWindow):
             tof = self.data["tof"]
 
             # old-app sign
+            try:
+                Sign = float(np.sign(intensity[0, np.argmax(np.abs(intensity[0, :]))]))
+                if Sign == 0:
+                    Sign = 1.0
+            except Exception:
+                Sign = 1.0
+            if mode == 1:  # Force positive sign for counting mode
+                Sign = 1.0
 
 
 
