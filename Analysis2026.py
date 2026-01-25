@@ -2408,78 +2408,78 @@ class TOFExplorer(QMainWindow):
         
     
     
-def _apply_baseline_subtraction(self, params):
-    """Apply baseline subtraction with given parameters"""
-    if self._original_data is None:
-        logger.error("Original data not available for subtraction")
-        return
+    def _apply_baseline_subtraction(self, params):
+        """Apply baseline subtraction with given parameters"""
+        if self._original_data is None:
+            logger.error("Original data not available for subtraction")
+            return
 
-    baseline_data = params["baseline_data"]
-    file_start = params["file_start"]
-    file_end = params["file_end"]
-    file_by_file = params["file_by_file"]
+        baseline_data = params["baseline_data"]
+        file_start = params["file_start"]
+        file_end = params["file_end"]
+        file_by_file = params["file_by_file"]
 
-    # Make local copies of baseline arrays
-    baseline_analog = baseline_data["analog"].copy()
-    baseline_counting = baseline_data["counting"].copy()
+        #Make local copies of baseline arrays
+        baseline_analog = baseline_data["analog"].copy()
+        baseline_counting = baseline_data["counting"].copy()
 
-    # Compute sign convention from the ORIGINAL data (do not modify self.data here)
-    try:
-        Sign_analog = float(np.sign(self._original_data["analog"][0, np.argmax(np.abs(self._original_data["analog"][0, :]))]))
-        if Sign_analog == 0:
+        # Compute sign convention from the ORIGINAL data (do not modify self.data here)
+        try:
+            Sign_analog = float(np.sign(self._original_data["analog"][0, np.argmax(np.abs(self._original_data["analog"][0, :]))]))
+            if Sign_analog == 0:
+                Sign_analog = 1.0
+        except Exception:
             Sign_analog = 1.0
-    except Exception:
-        Sign_analog = 1.0
 
-    try:
-        Sign_counting = float(np.sign(self._original_data["counting"][0, np.argmax(np.abs(self._original_data["counting"][0, :]))]))
-        if Sign_counting == 0:
+        try:
+            Sign_counting = float(np.sign(self._original_data["counting"][0, np.argmax(np.abs(self._original_data["counting"][0, :]))]))
+            if Sign_counting == 0:
+                Sign_counting = 1.0
+        except Exception:
             Sign_counting = 1.0
-    except Exception:
-        Sign_counting = 1.0
 
-    # Apply sign correction to baseline arrays only so subtraction matches display convention
-    baseline_analog *= Sign_analog
-    baseline_counting *= Sign_counting
+        # Apply sign correction to baseline arrays only so subtraction matches display convention
+        baseline_analog *= Sign_analog
+        baseline_counting *= Sign_counting
 
-    # Start from unmodified original data (update_plot will compute/display its Sign)
-    self.data["analog"] = self._original_data["analog"].copy()
-    self.data["counting"] = self._original_data["counting"].copy()
+        # Start from unmodified original data (update_plot will compute/display its Sign)
+        self.data["analog"] = self._original_data["analog"].copy()
+        self.data["counting"] = self._original_data["counting"].copy()
 
-    try:
-        if file_by_file:
-            # File-by-file subtraction
-            for i in range(file_start, file_end):
-                if i < baseline_analog.shape[0] and i < self.data["analog"].shape[0]:
-                    self.data["analog"][i, :] -= baseline_analog[i, :]
-                    self.data["counting"][i, :] -= baseline_counting[i, :]
+        try:
+            if file_by_file:
+                # File-by-file subtraction
+                for i in range(file_start, file_end):
+                    if i < baseline_analog.shape[0] and i < self.data["analog"].shape[0]:
+                        self.data["analog"][i, :] -= baseline_analog[i, :]
+                        self.data["counting"][i, :] -= baseline_counting[i, :]
 
-            logger.info(
-                f"Baseline subtraction successfully applied and active "
-                f"(File-by-file mode, files {file_start}-{file_end})"
-            )
-        else:
-            # Total average mode - compute average from baseline ROI (already sign-corrected)
-            baseline_avg_analog = np.mean(baseline_analog[file_start:file_end, :], axis=0)
-            baseline_avg_counting = np.mean(baseline_counting[file_start:file_end, :], axis=0)
+                logger.info(
+                    f"Baseline subtraction successfully applied and active "
+                    f"(File-by-file mode, files {file_start}-{file_end})"
+                )
+            else:
+                # Total average mode - compute average from baseline ROI (already sign-corrected)
+                baseline_avg_analog = np.mean(baseline_analog[file_start:file_end, :], axis=0)
+                baseline_avg_counting = np.mean(baseline_counting[file_start:file_end, :], axis=0)
 
-            # Subtract from ALL files in main data
-            self.data["analog"] -= baseline_avg_analog
-            self.data["counting"] -= baseline_avg_counting
+                # Subtract from ALL files in main data
+                self.data["analog"] -= baseline_avg_analog
+                self.data["counting"] -= baseline_avg_counting
 
-            logger.info(
-                f"Baseline subtraction successfully applied and active "
-                f"(Total average mode, baseline computed from files {file_start}-{file_end}, "
-                f"subtracted from all main data files)"
-            )
+                logger.info(
+                    f"Baseline subtraction successfully applied and active "
+                    f"(Total average mode, baseline computed from files {file_start}-{file_end}, "
+                    f"subtracted from all main data files)"
+                )
 
-        # Enable reset button and refresh display
-        self.btn_reset_baseline.setEnabled(True)
-        self.update_plot()
+            # Enable reset button and refresh display
+            self.btn_reset_baseline.setEnabled(True)
+            self.update_plot()
 
-    except Exception as e:
-        logger.exception(f"Baseline subtraction failed: {e}")
-        QMessageBox.critical(self, "Subtraction Error", f"Failed to apply subtraction:\n{str(e)}")
+        except Exception as e:
+            logger.exception(f"Baseline subtraction failed: {e}")
+            QMessageBox.critical(self, "Subtraction Error", f"Failed to apply subtraction:\n{str(e)}")
     
     def _reset_baseline(self):
         """Reset to original data (before baseline subtraction)"""
