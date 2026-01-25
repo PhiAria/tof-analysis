@@ -2419,12 +2419,31 @@ class TOFExplorer(QMainWindow):
         file_end = params["file_end"]
         file_by_file = params["file_by_file"]
         
-        baseline_analog = baseline_data["analog"]
-        baseline_counting = baseline_data["counting"]
+        baseline_analog = baseline_data["analog"].copy()
+        baseline_counting = baseline_data["counting"].copy()
         
-        # Start with original data
-        self.data["analog"] = self._original_data["analog"].copy()
-        self.data["counting"] = self._original_data["counting"].copy()
+        # Apply SAME sign correction to baseline that will be applied in display
+        try:
+            Sign_analog = float(np.sign(self._original_data["analog"][0, np.argmax(np.abs(self._original_data["analog"][0, :]))]))
+            if Sign_analog == 0:
+                Sign_analog = 1.0
+        except Exception:
+            Sign_analog = 1.0
+        
+        try:
+            Sign_counting = float(np.sign(self._original_data["counting"][0, np.argmax(np.abs(self._original_data["counting"][0, :]))]))
+            if Sign_counting == 0:
+                Sign_counting = 1.0
+        except Exception:
+            Sign_counting = 1.0
+        
+        # Apply sign correction to baseline data
+        baseline_analog *= Sign_analog
+        baseline_counting *= Sign_counting
+        
+        # Start with original data (also with sign correction applied)
+        self.data["analog"] = self._original_data["analog"].copy() * Sign_analog
+        self.data["counting"] = self._original_data["counting"].copy() * Sign_counting
         
         try:
             if file_by_file:
@@ -2462,7 +2481,6 @@ class TOFExplorer(QMainWindow):
         except Exception as e:
             logger.exception(f"Baseline subtraction failed: {e}")
             QMessageBox.critical(self, "Subtraction Error", f"Failed to apply subtraction:\n{str(e)}")
-
     
     def _reset_baseline(self):
         """Reset to original data (before baseline subtraction)"""
