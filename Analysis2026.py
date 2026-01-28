@@ -2403,7 +2403,7 @@ class TOFExplorer(QMainWindow):
         ax_main.set_yticklabels([f"{y:.1f}" for y in y_ticks])
 
         # Horizontal profile (top, matches new x)
-         if len(flipped_hprof) == len(flipped_x):
+        if len(flipped_hprof) == len(flipped_x):
             ax_hprof.plot(flipped_x, flipped_hprof, "k-", lw=0.5)
             ax_hprof.set_xlim(flipped_x.min(), flipped_x.max())
             ax_hprof.set_xticklabels([])
