@@ -2294,28 +2294,120 @@ class TOFExplorer(QMainWindow):
         self._analysis_window.show()
 
     def _export_plot_to_pdf(self):
-        """Export the current viewer plot to PDF file"""
+    """Export the current viewer plot to PDF file, with x/y axes flipped and matching profiles."""
         if not self.data: 
             QMessageBox.warning(self, "No Data", "Load data before exporting")
             return
-        
-        # Suggest filename based on folder name
+
+        import matplotlib.pyplot as plt
+
         folder_name = os.path.basename(self.folder) if self.folder else "tof_plot"
-        default_filename = f"{folder_name}_viewer.pdf"
-        
+        default_filename = f"{folder_name}_viewer-flipped.pdf"
+
         filename, _ = QFileDialog.getSaveFileName(
             self,
             "Export Plot as PDF",
             default_filename,
             "PDF Files (*.pdf)"
         )
-        
         if not filename:
             return  # User cancelled
-        
+
+    # Repeat the map extraction logic from update_plot
+        mode = self.mode_combo.currentIndex()
+        intensity = self.data["analog"].copy() if mode == 0 else self.data["counting"].copy()
+        tof = self.data["tof"]
         try:
-            # Save the entire figure with all subplots
-            self.figure. savefig(
+            Sign = float(np.sign(intensity[0, np.argmax(np.abs(intensity[0, :]))]))
+            if Sign == 0:
+                Sign = 1.0
+        except Exception:
+            Sign = 1.0
+        intensity *= Sign
+
+        axis = self._compute_axis(tof)
+        xmin = _safe_float(self.spin_xmin.value(), float(np.nanmin(axis)))
+        xmax = _safe_float(self.spin_xmax.value(), float(np.nanmax(axis)))
+        xmin, xmax = (xmin, xmax) if xmin <= xmax else (xmax, xmin)
+        ymin = int(self.spin_ymin.value())
+        ymax = int(self.spin_ymax.value())
+        ymin = max(0, ymin)
+        ymax = min(intensity.shape[0], ymax)
+        if ymin >= ymax:
+            QMessageBox.warning(self, "Invalid limits", "Ymin must be less than Ymax.")
+            return
+
+        idx_x = np.where((axis >= xmin) & (axis <= xmax))[0]
+        if idx_x.size == 0:
+            idx_x = np.arange(axis.size)
+        x_full = axis[idx_x]
+        sliced_data = intensity[ymin:ymax, :][:, idx_x]
+        denom = float(np.abs(np.max(sliced_data))) if sliced_data.size else 1.0
+        if denom == 0:
+            denom = 1.0
+        plotted = sliced_data / denom
+        if plotted.shape[1] > MAX_DISPLAY_COLS:
+            step = max(1, plotted.shape[1] // MAX_DISPLAY_COLS)
+            plotted = plotted[:, ::step]
+            x_full = x_full[::step]
+        y_centers = np.arange(ymin, ymax)
+
+    # Compute original profiles
+        hprof = np.mean(plotted, axis=0) if plotted.size else np.array([])
+        vprof = np.mean(plotted, axis=1) if plotted.size else np.array([])
+
+    # Prepare swapped (transposed) data and profiles for the PDF
+        flipped_data = plotted.T
+        flipped_x = y_centers  # now horizontal is file index (was vertical)
+        flipped_y = x_full     # now vertical is TOF/KE/BE (was horizontal)
+        flipped_hprof = vprof  # horizontal profile is the mean along original vertical axis
+        flipped_vprof = hprof  # vertical profile is the mean along original horizontal axis
+
+    # Create a new figure for PDF export
+        fig = plt.figure(figsize=(10, 10))
+        import matplotlib.gridspec as gridspec
+        gs = gridspec.GridSpec(2, 2, width_ratios=[8, 2], height_ratios=[2, 8],
+                               wspace=0.05, hspace=0.05)
+        ax_hprof = fig.add_subplot(gs[0, 0])
+        ax_main = fig.add_subplot(gs[1, 0], sharex=ax_hprof)
+        ax_vprof = fig.add_subplot(gs[1, 1], sharey=ax_main)
+        ax_cbar = fig.add_subplot(gs[0, 1])
+
+    # Main swapped map
+        cmap_name = GLOBAL_SETTINGS["plots"].get("Raw Avg", {}).get("cmap", "viridis")
+        cmin = _safe_float(GLOBAL_SETTINGS["plots"].get("Raw Avg", {}).get("vmin", 0.0), 0.0)
+        cmax = _safe_float(GLOBAL_SETTINGS["plots"].get("Raw Avg", {}).get("vmax", 0.4), 0.4)
+        mesh = ax_main.pcolormesh(flipped_x, flipped_y, flipped_data,
+                                  cmap=cmap_name, vmin=cmin, vmax=cmax, shading="auto")
+        ax_main.set_xlabel("File Index")
+        axis_mode = { "TOF": "TOF (ns)", "KE": "KE (eV)", "BE": "BE (eV)" }[self._axis_mode()]
+        ax_main.set_ylabel(axis_mode)
+        ax_main.set_xlim(flipped_x.min(), flipped_x.max())
+        ax_main.set_ylim(flipped_y.min(), flipped_y.max())
+
+    # Horizontal profile (top, matches new x)
+        if len(flipped_hprof) == len(flipped_x):
+            ax_hprof.plot(flipped_x, flipped_hprof, "k-", lw=0.5)
+        ax_hprof.set_xlim(flipped_x.min(), flipped_x.max())
+        ax_hprof.set_xticklabels([])
+
+    # Vertical profile (right, matches new y)
+        if len(flipped_vprof) == len(flipped_y):
+            ax_vprof.plot(flipped_vprof, flipped_y, "k-", lw=0.5)
+        ax_vprof.set_ylim(flipped_y.min(), flipped_y.max())
+        ax_vprof.set_yticklabels([])
+
+    # Colorbar
+        plt.colorbar(mesh, cax=ax_cbar)
+        ax_cbar.set_ylabel("Normalized Intensity")
+        ax_cbar.yaxis.set_label_position('right')
+        ax_cbar.yaxis.tick_right()
+
+        fig.suptitle("TOF Map (axes swapped) with matching profiles", fontsize=14)
+
+    # Save to PDF
+        try:
+            fig.savefig(
                 filename,
                 format='pdf',
                 bbox_inches='tight',
@@ -2327,15 +2419,16 @@ class TOFExplorer(QMainWindow):
                     'Creator': 'Analysis2026.py'
                 }
             )
-            
+            plt.close(fig)  # free memory
             QMessageBox.information(
                 self,
                 "Export Successful",
-                f"Plot saved to:\n{filename}"
+                f"Flipped viewer plot saved to:\n{filename}"
             )
-            logger.info(f"Exported plot to PDF: {filename}")
-            
-        except Exception as e: 
+            logger.info(f"Exported flipped plot to PDF: {filename}")
+
+        except Exception as e:
+            plt.close(fig)
             QMessageBox.critical(
                 self,
                 "Export Failed",
