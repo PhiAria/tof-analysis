@@ -2299,7 +2299,8 @@ class TOFExplorer(QMainWindow):
             return
 
         import matplotlib.pyplot as plt
-
+        import numpy as np
+        
         folder_name = os.path.basename(self.folder) if self.folder else "tof_plot"
         default_filename = f"{folder_name}_viewer-flipped.pdf"
 
