@@ -2342,28 +2342,28 @@ class TOFExplorer(QMainWindow):
             idx_x = np.arange(axis.size)
         x_full = axis[idx_x]
         sliced_data = intensity[ymin:ymax, :][:, idx_x]
-        denom = float(np.abs(np.max(sliced_data))) if sliced_data.size else 1.0
-        if denom == 0:
-            denom = 1.0
-        plotted = sliced_data / denom
+        hprof = np.mean(sliced_data, axis=0) if sliced_data.size else np.array([])
+        vprof = np.mean(sliced_data, axis=1) if sliced_data.size else np.array([])
         if plotted.shape[1] > MAX_DISPLAY_COLS:
             step = max(1, plotted.shape[1] // MAX_DISPLAY_COLS)
             plotted = plotted[:, ::step]
             x_full = x_full[::step]
+            hprof = hprof[::step]
         y_centers = np.arange(ymin, ymax)
 
-    # Compute original profiles
-        hprof = np.mean(plotted, axis=0) if plotted.size else np.array([])
-        vprof = np.mean(plotted, axis=1) if plotted.size else np.array([])
-
-    # Prepare swapped (transposed) data and profiles for the PDF
+# PDF: flip the main map and also flip y/profile in counting mode
         flipped_data = plotted.T
-        flipped_x = y_centers  # now horizontal is file index (was vertical)
-        flipped_y = x_full     # now vertical is TOF/KE/BE (was horizontal)
-        flipped_hprof = vprof  # horizontal profile is the mean along original vertical axis
-        flipped_vprof = hprof  # vertical profile is the mean along original horizontal axis
+        flipped_x = y_centers   # now horizontal is file index (was vertical)
+        flipped_y = x_full      # now vertical is TOF/KE/BE (was horizontal)
+        flipped_hprof = vprof   # horizontal profile is the mean along original vertical axis
+        flipped_vprof = hprof   # vertical profile is the mean along original horizontal
 
-    # Create a new figure for PDF export
+        if mode == 1:  # COUNTING mode: flip y and associated data to ensure "up" is up
+            flipped_data = flipped_data[::-1, :]
+            flipped_y = flipped_y[::-1]
+            flipped_vprof = flipped_vprof[::-1]
+
+# Create PDF figure
         fig = plt.figure(figsize=(10, 10))
         import matplotlib.gridspec as gridspec
         gs = gridspec.GridSpec(2, 2, width_ratios=[8, 2], height_ratios=[2, 8],
@@ -2373,49 +2373,40 @@ class TOFExplorer(QMainWindow):
         ax_vprof = fig.add_subplot(gs[1, 1], sharey=ax_main)
         ax_cbar = fig.add_subplot(gs[0, 1])
 
-    # Main swapped map
-        cmap_name = GLOBAL_SETTINGS["plots"].get("Raw Avg", {}).get("cmap", "jet")
+        cmap_name = GLOBAL_SETTINGS["plots"].get("Raw Avg", {}).get("cmap", "viridis")
         cmin = _safe_float(GLOBAL_SETTINGS["plots"].get("Raw Avg", {}).get("vmin", 0.0), 0.0)
         cmax = _safe_float(GLOBAL_SETTINGS["plots"].get("Raw Avg", {}).get("vmax", 0.4), 0.4)
         mesh = ax_main.pcolormesh(flipped_x, flipped_y, flipped_data,
                                   cmap=cmap_name, vmin=cmin, vmax=cmax, shading="auto")
-        ax_main.set_xlabel("NStep")
-        axis_mode = { "TOF": "TOF (ns)", "KE": "KE (eV)", "BE": "BE (eV)" }[self._axis_mode()]
+        ax_main.set_xlabel("File Index")
+        axis_mode = {"TOF": "TOF (ns)", "KE": "KE (eV)", "BE": "BE (eV)"}[self._axis_mode()]
         ax_main.set_ylabel(axis_mode)
         ax_main.set_xlim(flipped_x.min(), flipped_x.max())
         ax_main.set_ylim(flipped_y.min(), flipped_y.max())
 
-        # Set ticks on both axes with reasonable intervals (at most 8 for each axis for clarity)
+# Tick marks and labels (use up to 8 for readability)
         import numpy as np
         from matplotlib.ticker import MaxNLocator
 
         ax_main.xaxis.set_major_locator(MaxNLocator(integer=True, nbins=8))
         ax_main.yaxis.set_major_locator(MaxNLocator(nbins=8))
+        ax_main.set_xticks(np.linspace(flipped_x.min(), flipped_x.max(), num=8, dtype=int))
+        ax_main.set_yticks(np.linspace(flipped_y.min(), flipped_y.max(), num=8))
+# If you want float labels, keep .1 precision:
+        ax_main.set_yticklabels([f"{v:.1f}" for v in np.linspace(flipped_y.min(), flipped_y.max(), num=8)])
 
-        # Optionally, set custom ticks if your axes are not integers or you want specific tick locations:
-        # X ticks for file index axis
-        x_ticks = np.linspace(flipped_x.min(), flipped_x.max(), num=8)
-        ax_main.set_xticks(x_ticks)
-        ax_main.set_xticklabels([f"{int(x)}" for x in x_ticks])
-
-        #Y ticks for TOF/KE/BE axis (typically floats)
-        y_ticks = np.linspace(flipped_y.min(), flipped_y.max(), num=8)
-        ax_main.set_yticks(y_ticks)
-        ax_main.set_yticklabels([f"{y:.1f}" for y in y_ticks])
-
-        # Horizontal profile (top, matches new x)
+# Horizontal profile (top, matches new x)
         if len(flipped_hprof) == len(flipped_x):
             ax_hprof.plot(flipped_x, flipped_hprof, "k-", lw=0.5)
-            ax_hprof.set_xlim(flipped_x.min(), flipped_x.max())
-            ax_hprof.set_xticklabels([])
+        ax_hprof.set_xlim(flipped_x.min(), flipped_x.max())
+        ax_hprof.tick_params(labelbottom=False)
 
-        # Vertical profile (right, matches new y)
+# Vertical profile (right, matches new y)
         if len(flipped_vprof) == len(flipped_y):
             ax_vprof.plot(flipped_vprof, flipped_y, "k-", lw=0.5)
-            ax_vprof.set_ylim(flipped_y.min(), flipped_y.max())
-            ax_vprof.set_yticklabels([])
+        ax_vprof.set_ylim(flipped_y.min(), flipped_y.max())
+        ax_vprof.tick_params(labelleft=False)
 
-    # Colorbar
         plt.colorbar(mesh, cax=ax_cbar)
         ax_cbar.set_ylabel("Normalized Intensity")
         ax_cbar.yaxis.set_label_position('right')
