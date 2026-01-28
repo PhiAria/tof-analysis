@@ -2378,23 +2378,41 @@ class TOFExplorer(QMainWindow):
         cmax = _safe_float(GLOBAL_SETTINGS["plots"].get("Raw Avg", {}).get("vmax", 0.4), 0.4)
         mesh = ax_main.pcolormesh(flipped_x, flipped_y, flipped_data,
                                   cmap=cmap_name, vmin=cmin, vmax=cmax, shading="auto")
-        ax_main.set_xlabel("File Index")
+        ax_main.set_xlabel("NStep")
         axis_mode = { "TOF": "TOF (ns)", "KE": "KE (eV)", "BE": "BE (eV)" }[self._axis_mode()]
         ax_main.set_ylabel(axis_mode)
         ax_main.set_xlim(flipped_x.min(), flipped_x.max())
         ax_main.set_ylim(flipped_y.min(), flipped_y.max())
 
-    # Horizontal profile (top, matches new x)
-        if len(flipped_hprof) == len(flipped_x):
-            ax_hprof.plot(flipped_x, flipped_hprof, "k-", lw=0.5)
-        ax_hprof.set_xlim(flipped_x.min(), flipped_x.max())
-        ax_hprof.set_xticklabels([])
+        # Set ticks on both axes with reasonable intervals (at most 8 for each axis for clarity)
+        import numpy as np
+        from matplotlib.ticker import MaxNLocator
 
-    # Vertical profile (right, matches new y)
+        ax_main.xaxis.set_major_locator(MaxNLocator(integer=True, nbins=8))
+        ax_main.yaxis.set_major_locator(MaxNLocator(nbins=8))
+
+        # Optionally, set custom ticks if your axes are not integers or you want specific tick locations:
+        # X ticks for file index axis
+        x_ticks = np.linspace(flipped_x.min(), flipped_x.max(), num=8)
+        ax_main.set_xticks(x_ticks)
+        ax_main.set_xticklabels([f"{int(x)}" for x in x_ticks])
+
+        #Y ticks for TOF/KE/BE axis (typically floats)
+        y_ticks = np.linspace(flipped_y.min(), flipped_y.max(), num=8)
+        ax_main.set_yticks(y_ticks)
+        ax_main.set_yticklabels([f"{y:.1f}" for y in y_ticks])
+
+        # Horizontal profile (top, matches new x)
+         if len(flipped_hprof) == len(flipped_x):
+            ax_hprof.plot(flipped_x, flipped_hprof, "k-", lw=0.5)
+            ax_hprof.set_xlim(flipped_x.min(), flipped_x.max())
+            ax_hprof.set_xticklabels([])
+
+        # Vertical profile (right, matches new y)
         if len(flipped_vprof) == len(flipped_y):
             ax_vprof.plot(flipped_vprof, flipped_y, "k-", lw=0.5)
-        ax_vprof.set_ylim(flipped_y.min(), flipped_y.max())
-        ax_vprof.set_yticklabels([])
+            ax_vprof.set_ylim(flipped_y.min(), flipped_y.max())
+            ax_vprof.set_yticklabels([])
 
     # Colorbar
         plt.colorbar(mesh, cax=ax_cbar)
