@@ -2394,7 +2394,7 @@ class TOFExplorer(QMainWindow):
         axis_mode = {"TOF": "TOF (ns)", "KE": "KE (eV)", "BE": "BE (eV)"}[self._axis_mode()]
         ax_main.set_ylabel(axis_mode)
         ax_main.set_xlim(flipped_x.min(), flipped_x.max())
-        ax_main.set_ylim(flipped_y.min(), flipped_y.max())  # <--- This ensures y runs bottom (min) to top (max)!
+        ax_main.set_ylim(flipped_y.max(), flipped_y.min())  # <--- This ensures y runs bottom (min) to top (max)!
 
     # --- Add ticks with values up to 8 for clarity ---
         from matplotlib.ticker import MaxNLocator
@@ -2415,7 +2415,7 @@ class TOFExplorer(QMainWindow):
     # --- Vertical profile (right, uses RAW hprof) ---
         if len(flipped_vprof) == len(flipped_y):
             ax_vprof.plot(flipped_vprof, flipped_y, "k-", lw=0.5)
-        ax_vprof.set_ylim(flipped_y.min(), flipped_y.max())
+        ax_vprof.set_ylim(flipped_y.max(), flipped_y.min())
         ax_vprof.tick_params(labelleft=False)
 
         plt.colorbar(mesh, cax=ax_cbar)
