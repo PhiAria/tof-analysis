@@ -2373,7 +2373,7 @@ class TOFExplorer(QMainWindow):
         ax_cbar = fig.add_subplot(gs[0, 1])
 
     # Main swapped map
-        cmap_name = GLOBAL_SETTINGS["plots"].get("Raw Avg", {}).get("cmap", "viridis")
+        cmap_name = GLOBAL_SETTINGS["plots"].get("Raw Avg", {}).get("cmap", "jet")
         cmin = _safe_float(GLOBAL_SETTINGS["plots"].get("Raw Avg", {}).get("vmin", 0.0), 0.0)
         cmax = _safe_float(GLOBAL_SETTINGS["plots"].get("Raw Avg", {}).get("vmax", 0.4), 0.4)
         mesh = ax_main.pcolormesh(flipped_x, flipped_y, flipped_data,
