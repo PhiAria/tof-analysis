@@ -2398,7 +2398,7 @@ class TOFExplorer(QMainWindow):
         axis_mode = {"TOF": "TOF (ns)", "KE": "KE (eV)", "BE": "BE (eV)"}[self._axis_mode()]
         ax_main.set_ylabel(axis_mode)
         ax_main.set_xlim(flipped_x.min(), flipped_x.max())
-        ax_main.set_ylim(flipped_y.min(), flipped_y.max())
+        ax_main.set_ylim(flipped_y.max(), flipped_y.min())
 
     # --- Add ticks with values up to 8 for clarity ---
         from matplotlib.ticker import MaxNLocator
