@@ -2294,7 +2294,6 @@ class TOFExplorer(QMainWindow):
         self._analysis_window.show()
 
     def _export_plot_to_pdf(self):
-    """Export the current viewer plot to PDF file, with x/y axes flipped and matching profiles."""
         if not self.data: 
             QMessageBox.warning(self, "No Data", "Load data before exporting")
             return
