@@ -5,20 +5,19 @@
 # PRIORITY 1
 # ------------------------------------------------------------------------------
 # [TODO-001] Plot Limits:  Update on Enter Key Press []
-# [TODO-002] Energy Calibration:  Validation & Documentation []
+# [TODO-002] Energy Calibration:  Validation & Documentation [X]
 # [TODO-003] Auto-Update:  Configurable Interval Selector []
-# [TODO-004] Testing:  Unit Tests for Physics Calculations []
 # ------------------------------------------------------------------------------
 # PRIORITY 2
 # ------------------------------------------------------------------------------
-# [TODO-005] Feature: Profile Overlay from Reference Folder [X]
-# [TODO-006] Export:  Individual Plot as PDF [X]
-# [TODO-007] Feature:  Vertical Profile FWHM Analysis []
-# [TODO-008] Export: Fitted Parameters to CSV []
+# [TODO-004] Feature: Profile Overlay from Reference Folder [X]
+# [TODO-005] Export:  Individual Plot as PDF [X]
+# [TODO-006] Feature:  Vertical Profile FWHM Analysis [X]
+# [TODO-007] Export: Fitted Parameters to CSV []
 # ------------------------------------------------------------------------------
 # PRIORITY 3
 # ------------------------------------------------------------------------------
-# [TODO-009] Session Management: Save Complete Analysis State []
+# [TODO-008] Session Management: Save Complete Analysis State []
 
 
 import sys
