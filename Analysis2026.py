@@ -2187,6 +2187,12 @@ class TOFExplorer(QMainWindow):
         self.btn_enable_peak.clicked.connect(self._toggle_peak_selection)
         peak_layout.addWidget(self.btn_enable_peak)
 
+
+        self.peak_result_label = QLabel("FWHM: ---")
+        self.peak_result_label.setStyleSheet("QLabel { font-family: monospace; padding: 5px; background-color: #f0f0f0; border: 1px solid #d0d0d0; }")
+        self.peak_result_label.setWordWrap(True)
+        peak_layout.addWidget(self.peak_result_label)
+
         self.btn_clear_peaks = QPushButton("Clear Peak Fits")
         self.btn_clear_peaks.clicked.connect(self._clear_peak_fits)
         self.btn_clear_peaks.setEnabled(False)
