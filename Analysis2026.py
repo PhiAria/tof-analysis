@@ -86,6 +86,27 @@ DEFAULT_SETTINGS = {
         "last_folder": "",
         "auto_watch": False,
     },
+    "analysis": {
+        "file_start": 0,
+        "file_stop": 2900,
+        "model": "two_exp",
+        "bin_to_ns": False,
+        "edge_detection": {
+            "tof_min_ns": 360.0,
+            "tof_max_ns": 395.0,
+            "level": 35
+        },
+        "fft": {
+            "file_start": 0,
+            "file_end": 100000,
+            "tof_min_ns": 100.0,
+            "tof_max_ns": 5600.0
+        },
+        "fitting": {
+            "tof_min_ns": 370.0,
+            "tof_max_ns": 400.0
+        }
+    }
 }
 
 
@@ -706,43 +727,45 @@ class AnalysisWindow(QMainWindow):
 
         self.spin_nstart = QSpinBox()
         self.spin_nstart.setRange(0, 100000)
-        self.spin_nstart.setValue(0)
+        self.spin_nstart.setValue(GLOBAL_SETTINGS["analysis"].get("file_start", 0))
         p.addWidget(QLabel("Start file index:"), row, 0)
         p.addWidget(self.spin_nstart, row, 1)
         row += 1
 
         self.spin_nstop = QSpinBox()
         self.spin_nstop.setRange(1, 100000)
-        self.spin_nstop.setValue(min(2900, self.data["analog"].shape[0]))
+        default_stop = GLOBAL_SETTINGS["analysis"].get("file_stop", 2900)
+        self.spin_nstop.setValue(min(default_stop, self.data["analog"].shape[0]))
         p.addWidget(QLabel("Stop file index:"), row, 0)
         p.addWidget(self.spin_nstop, row, 1)
         row += 1
 
         self.model_combo = QComboBox()
         self.model_combo.addItems(["one_exp", "two_exp"])
-        self.model_combo.setCurrentText("two_exp")
+        self.model_combo.setCurrentText(GLOBAL_SETTINGS["analysis"].get("model", "two_exp"))
         p.addWidget(QLabel("Model:"), row, 0)
         p.addWidget(self.model_combo, row, 1)
         row += 1
 
-        # NEW: Bin to 1ns checkbox
+        # Bin to 1ns checkbox
         self.chk_bin_to_ns = QCheckBox("Bin to 1 ns")
-        self.chk_bin_to_ns.setChecked(GLOBAL_SETTINGS["data"].get("BIN_TO_NS_FLAG", False))
-        p.addWidget(self.chk_bin_to_ns, row, 0, 1, 2)
-        row += 1
+        self.chk_bin_to_ns.setChecked(GLOBAL_SETTINGS["analysis"].get("bin_to_ns", False))
 
         params.setLayout(p)
         v.addWidget(params)
 
         # ==================== Edge Detection Parameters ====================
+        # ==================== Edge Detection Parameters ====================
         edge_params = QGroupBox("Edge Detection")
         edge_layout = QGridLayout()
         edge_row = 0
 
+        edge_cfg = GLOBAL_SETTINGS["analysis"]["edge_detection"]
+
         self.spin_edge_tof_min = QDoubleSpinBox()
         self.spin_edge_tof_min.setRange(0, 10000)
         self.spin_edge_tof_min.setDecimals(0)
-        self.spin_edge_tof_min.setValue(360)
+        self.spin_edge_tof_min.setValue(edge_cfg.get("tof_min_ns", 360.0))
         edge_layout.addWidget(QLabel("TOF Min (ns):"), edge_row, 0)
         edge_layout.addWidget(self.spin_edge_tof_min, edge_row, 1)
         edge_row += 1
@@ -750,36 +773,38 @@ class AnalysisWindow(QMainWindow):
         self.spin_edge_tof_max = QDoubleSpinBox()
         self.spin_edge_tof_max.setRange(0, 10000)
         self.spin_edge_tof_max.setDecimals(0)
-        self.spin_edge_tof_max.setValue(395)
+        self.spin_edge_tof_max.setValue(edge_cfg.get("tof_max_ns", 395.0))
         edge_layout.addWidget(QLabel("TOF Max (ns):"), edge_row, 0)
         edge_layout.addWidget(self.spin_edge_tof_max, edge_row, 1)
         edge_row += 1
 
         self.spin_edge_level = QSpinBox()
         self.spin_edge_level.setRange(0, 100)
-        self.spin_edge_level.setValue(35)
+        self.spin_edge_level.setValue(edge_cfg.get("level", 35))
         edge_layout.addWidget(QLabel("Level:"), edge_row, 0)
         edge_layout.addWidget(self.spin_edge_level, edge_row, 1)
         edge_row += 1
 
         edge_params.setLayout(edge_layout)
         v.addWidget(edge_params)
-
+        # ==================== FFT Parameters ====================
         # ==================== FFT Parameters ====================
         fft_params = QGroupBox("FFT Parameters")
         fft_layout = QGridLayout()
         fft_row = 0
 
+        fft_cfg = GLOBAL_SETTINGS["analysis"]["fft"]
+
         self.spin_fft_file_start = QSpinBox()
         self.spin_fft_file_start.setRange(0, 100000)
-        self.spin_fft_file_start.setValue(0)
+        self.spin_fft_file_start.setValue(fft_cfg.get("file_start", 0))
         fft_layout.addWidget(QLabel("File Index Start:"), fft_row, 0)
         fft_layout.addWidget(self.spin_fft_file_start, fft_row, 1)
         fft_row += 1
 
         self.spin_fft_file_end = QSpinBox()
         self.spin_fft_file_end.setRange(1, 100000)
-        self.spin_fft_file_end.setValue(100000)  # Will be clamped to actual Nfiles
+        self.spin_fft_file_end.setValue(fft_cfg.get("file_end", 100000))
         fft_layout.addWidget(QLabel("File Index End:"), fft_row, 0)
         fft_layout.addWidget(self.spin_fft_file_end, fft_row, 1)
         fft_row += 1
@@ -787,7 +812,7 @@ class AnalysisWindow(QMainWindow):
         self.spin_fft_tof_min = QDoubleSpinBox()
         self.spin_fft_tof_min.setRange(0, 10000)
         self.spin_fft_tof_min.setDecimals(0)
-        self.spin_fft_tof_min.setValue(100)
+        self.spin_fft_tof_min.setValue(fft_cfg.get("tof_min_ns", 100.0))
         fft_layout.addWidget(QLabel("TOF Min (ns):"), fft_row, 0)
         fft_layout.addWidget(self.spin_fft_tof_min, fft_row, 1)
         fft_row += 1
@@ -795,7 +820,7 @@ class AnalysisWindow(QMainWindow):
         self.spin_fft_tof_max = QDoubleSpinBox()
         self.spin_fft_tof_max.setRange(0, 10000)
         self.spin_fft_tof_max.setDecimals(0)
-        self.spin_fft_tof_max.setValue(5600)
+        self.spin_fft_tof_max.setValue(fft_cfg.get("tof_max_ns", 5600.0))
         fft_layout.addWidget(QLabel("TOF Max (ns):"), fft_row, 0)
         fft_layout.addWidget(self.spin_fft_tof_max, fft_row, 1)
         fft_row += 1
@@ -804,14 +829,17 @@ class AnalysisWindow(QMainWindow):
         v.addWidget(fft_params)
 
         # ==================== Fit Parameters ====================
+        # ==================== Fit Parameters ====================
         fit_params = QGroupBox("Fit Parameters")
         fit_layout = QGridLayout()
         fit_row = 0
 
+        fit_cfg = GLOBAL_SETTINGS["analysis"]["fitting"]
+
         self.spin_fit_tof_min = QDoubleSpinBox()
         self.spin_fit_tof_min.setRange(0, 10000)
         self.spin_fit_tof_min.setDecimals(0)
-        self.spin_fit_tof_min.setValue(370)
+        self.spin_fit_tof_min.setValue(fit_cfg.get("tof_min_ns", 370.0))
         fit_layout.addWidget(QLabel("TOF Min (ns):"), fit_row, 0)
         fit_layout.addWidget(self.spin_fit_tof_min, fit_row, 1)
         fit_row += 1
@@ -819,14 +847,13 @@ class AnalysisWindow(QMainWindow):
         self.spin_fit_tof_max = QDoubleSpinBox()
         self.spin_fit_tof_max.setRange(0, 10000)
         self.spin_fit_tof_max.setDecimals(0)
-        self.spin_fit_tof_max.setValue(400)
+        self.spin_fit_tof_max.setValue(fit_cfg.get("tof_max_ns", 400.0))
         fit_layout.addWidget(QLabel("TOF Max (ns):"), fit_row, 0)
         fit_layout.addWidget(self.spin_fit_tof_max, fit_row, 1)
         fit_row += 1
 
         fit_params.setLayout(fit_layout)
         v.addWidget(fit_params)
-
         # ==================== Show Plots ====================
         plots = QGroupBox("Show plots")
         pl = QVBoxLayout()
@@ -1166,16 +1193,28 @@ class AnalysisWindow(QMainWindow):
             "fit_tof_max": self.spin_fit_tof_max.value(),
         }
 
-        # Update t0_fixed_mm in settings
+        # Update ALL settings
         GLOBAL_SETTINGS["fit"]["t0_fixed_mm"] = self.spin_l0.value()
-        GLOBAL_SETTINGS["data"]["BIN_TO_NS_FLAG"] = bin_to_ns
+        GLOBAL_SETTINGS["analysis"]["file_start"] = self.spin_nstart.value()
+        GLOBAL_SETTINGS["analysis"]["file_stop"] = self.spin_nstop.value()
+        GLOBAL_SETTINGS["analysis"]["model"] = self.model_combo.currentText()
+        GLOBAL_SETTINGS["analysis"]["bin_to_ns"] = bin_to_ns
+        GLOBAL_SETTINGS["analysis"]["edge_detection"]["tof_min_ns"] = self.spin_edge_tof_min.value()
+        GLOBAL_SETTINGS["analysis"]["edge_detection"]["tof_max_ns"] = self.spin_edge_tof_max.value()
+        GLOBAL_SETTINGS["analysis"]["edge_detection"]["level"] = self.spin_edge_level.value()
+        GLOBAL_SETTINGS["analysis"]["fft"]["file_start"] = self.spin_fft_file_start.value()
+        GLOBAL_SETTINGS["analysis"]["fft"]["file_end"] = self.spin_fft_file_end.value()
+        GLOBAL_SETTINGS["analysis"]["fft"]["tof_min_ns"] = self.spin_fft_tof_min.value()
+        GLOBAL_SETTINGS["analysis"]["fft"]["tof_max_ns"] = self.spin_fft_tof_max.value()
+        GLOBAL_SETTINGS["analysis"]["fitting"]["tof_min_ns"] = self.spin_fit_tof_min.value()
+        GLOBAL_SETTINGS["analysis"]["fitting"]["tof_max_ns"] = self.spin_fit_tof_max.value()
         save_settings(GLOBAL_SETTINGS)
 
         self._analysis_worker = AnalysisWorker(self.folder, self.data, params)
         self._analysis_worker.progress.connect(lambda p: self.status.setText(f"Analysis: {p}%"))
         self._analysis_worker.finished.connect(self._on_analysis_finished)
         self._analysis_worker.start()
-
+    
     def refit_only(self):
         """Re-run fitting only without recalculating everything"""
         if not self._last_analysis:
