@@ -139,6 +139,14 @@ def save_settings(settings):
     except Exception as e:
         logger.error(f"Failed to save settings: {e}")
 
+def gaussian_profile(x, amp, center, sigma, offset):
+    """Gaussian function for profile peak fitting"""
+    return amp * np.exp(-(x - center)**2 / (2 * sigma**2)) + offset
+
+def calculate_fwhm(sigma):
+    """Calculate FWHM from Gaussian sigma"""
+    return 2 * np.sqrt(2 * np.log(2)) * sigma
+
 
 def _safe_float(value, default=0.0):
     try:
@@ -1698,7 +1706,33 @@ class BaselineWindow(QMainWindow):
         self.status_label = QLabel("Ready")
         self.status_label.setWordWrap(True)
         v.addWidget(self.status_label)
-        
+        # ==================== Peak Analysis ====================
+        peak_group = QGroupBox("Peak Analysis (Profiles)")
+        peak_layout = QVBoxLayout()
+
+        peak_info = QLabel("Enable selection, then click and drag\non horizontal or vertical profile to fit peak.")
+        peak_info.setWordWrap(True)
+        peak_info.setStyleSheet("QLabel { color: #666; font-size: 10px; }")
+        peak_layout.addWidget(peak_info)
+
+        self.btn_enable_peak = QPushButton("Enable Peak Selection")
+        self.btn_enable_peak.setCheckable(True)
+        self.btn_enable_peak.setEnabled(False)  # Enabled after data load
+        self.btn_enable_peak.clicked.connect(self._toggle_peak_selection)
+        peak_layout.addWidget(self.btn_enable_peak)
+
+        self.btn_clear_peaks = QPushButton("Clear Peak Fits")
+        self.btn_clear_peaks.clicked.connect(self._clear_peak_fits)
+        self.btn_clear_peaks.setEnabled(False)
+        peak_layout.addWidget(self.btn_clear_peaks)
+
+        self.peak_result_label = QLabel("FWHM: ---")
+        self.peak_result_label.setStyleSheet("QLabel { font-family: monospace; padding: 5px; background-color: #f0f0f0; border: 1px solid #d0d0d0; }")
+        self.peak_result_label.setWordWrap(True)
+        peak_layout.addWidget(self.peak_result_label)
+
+        peak_group.setLayout(peak_layout)
+        v.addWidget(peak_group)
         v.addStretch()
         return v
     
@@ -1952,7 +1986,13 @@ class TOFExplorer(QMainWindow):
         self._current_x_centers = None
 
         self._last_axis_mode = None
-
+# Peak selection state
+        self._peak_selection_active = False
+        self._peak_selection_start = None
+        self._peak_selection_rect = None
+        self._peak_fit_lines = []
+        self._peak_fit_text = None
+        self._peak_current_profile = None  # 'horizontal' or 'vertical'
         # Debounce timers
         self._calib_debounce_timer = QTimer(self)
         self._calib_debounce_timer.setSingleShot(True)
@@ -2164,6 +2204,8 @@ class TOFExplorer(QMainWindow):
         
         # Connect mouse motion event
         self.canvas.mpl_connect('motion_notify_event', self._on_mouse_move)
+        self.canvas.mpl_connect('button_press_event', self._on_canvas_click)
+        self.canvas.mpl_connect('button_release_event', self._on_canvas_release)
         
         v.addWidget(self.canvas)
         return v
@@ -2314,6 +2356,7 @@ class TOFExplorer(QMainWindow):
         self.btn_analyze.setEnabled(True)
         self.btn_export_pdf.setEnabled(True)
         self.btn_load_baseline.setEnabled(True)
+        self.btn_enable_peak.setEnabled(True)  # Enable peak selection
 
         self._init_spinboxes()
         self._axis_mode_changed(force=True)
@@ -2615,8 +2658,262 @@ class TOFExplorer(QMainWindow):
         finally:
             self._updating = False
 
+def _toggle_peak_selection(self, checked):
+    """Toggle peak selection mode"""
+    self._peak_selection_active = checked
+    if checked:
+        self.btn_enable_peak.setText("Disable Peak Selection")
+        self.progress_label.setText("Peak mode: drag on profile")
+    else:
+        self.btn_enable_peak.setText("Enable Peak Selection")
+        self.progress_label.setText("Idle")
+
+def _clear_peak_fits(self):
+    """Clear all peak fits"""
+    for line in self._peak_fit_lines:
+        try:
+            line.remove()
+        except:
+            pass
+    self._peak_fit_lines = []
+    
+    if self._peak_fit_text is not None:
+        try:
+            self._peak_fit_text.remove()
+        except:
+            pass
+        self._peak_fit_text = None
+    
+    self.peak_result_label.setText("FWHM: ---")
+    self.btn_clear_peaks.setEnabled(False)
+    self.canvas.draw_idle()
+
+def _on_canvas_click(self, event):
+    """Handle mouse button press for peak selection"""
+    if not self._peak_selection_active or event.button != 1:
+        return
+    
+    # Determine which profile was clicked
+    if event.inaxes == self.ax_hprof:
+        self._peak_selection_start = event.xdata
+        self._peak_current_profile = 'horizontal'
+        logger.info(f"Peak selection started on horizontal profile at x={event.xdata:.2f}")
+    elif event.inaxes == self.ax_vprof:
+        self._peak_selection_start = event.ydata
+        self._peak_current_profile = 'vertical'
+        logger.info(f"Peak selection started on vertical profile at y={event.ydata:.2f}")
+
+def _on_canvas_release(self, event):
+    """Handle mouse button release for peak selection"""
+    if not self._peak_selection_active or event.button != 1:
+        return
+    
+    if self._peak_selection_start is None or self._peak_current_profile is None:
+        return
+    
+    # Get end coordinate
+    if self._peak_current_profile == 'horizontal' and event.inaxes == self.ax_hprof:
+        if event.xdata is None:
+            self._peak_selection_start = None
+            self._peak_current_profile = None
+            return
+        
+        x_min = min(self._peak_selection_start, event.xdata)
+        x_max = max(self._peak_selection_start, event.xdata)
+        
+        logger.info(f"Horizontal profile selection: {x_min:.2f} to {x_max:.2f}")
+        self._fit_horizontal_peak(x_min, x_max)
+        
+    elif self._peak_current_profile == 'vertical' and event.inaxes == self.ax_vprof:
+        if event.ydata is None:
+            self._peak_selection_start = None
+            self._peak_current_profile = None
+            return
+        
+        y_min = min(self._peak_selection_start, event.ydata)
+        y_max = max(self._peak_selection_start, event.ydata)
+        
+        logger.info(f"Vertical profile selection: {y_min:.2f} to {y_max:.2f}")
+        self._fit_vertical_peak(y_min, y_max)
+    
+    # Reset selection state
+    self._peak_selection_start = None
+    self._peak_current_profile = None
+
+def _fit_horizontal_peak(self, x_min, x_max):
+    """Fit Gaussian to horizontal profile (TOF/Energy axis)"""
+    if not self.data:
+        return
+    
+    mode = self.mode_combo.currentIndex()
+    intensity = self.data["analog"].copy() if mode == 0 else self.data["counting"].copy()
+    
+    # Apply sign correction
+    if mode == 0:
+        intensity = -intensity
+    else:
+        intensity = intensity
+    
+    # Get current axis and limits
+    axis = self._compute_axis(self.data["tof"])
+    ymin = int(self.spin_ymin.value())
+    ymax = int(self.spin_ymax.value())
+    ymin = max(0, min(ymin, intensity.shape[0]-1))
+    ymax = min(ymax, intensity.shape[0])
+    
+    # Filter by x range
+    mask = (axis >= x_min) & (axis <= x_max)
+    if not mask.any():
+        QMessageBox.warning(self, "No Data", "No data points in selected region")
+        return
+    
+    x_data = axis[mask]
+    
+    # Calculate horizontal profile
+    sliced_data = intensity[ymin:ymax, :][:, mask]
+    y_data = np.mean(sliced_data, axis=0)
+    
+    if len(x_data) < 4:
+        QMessageBox.warning(self, "Insufficient Data", "Select a wider region")
+        return
+    
+    try:
+        # Initial guess
+        amp_guess = np.max(y_data) - np.min(y_data)
+        center_guess = x_data[np.argmax(y_data)]
+        sigma_guess = (x_max - x_min) / 4
+        offset_guess = np.min(y_data)
+        
+        p0 = [amp_guess, center_guess, sigma_guess, offset_guess]
+        
+        # Fit
+        popt, pcov = curve_fit(gaussian_profile, x_data, y_data, p0=p0, maxfev=5000)
+        amp, center, sigma, offset = popt
+        perr = np.sqrt(np.diag(pcov))
+        
+        # Calculate FWHM
+        fwhm = calculate_fwhm(abs(sigma))
+        fwhm_err = calculate_fwhm(perr[2])
+        
+        # Get axis label
+        axis_mode = self._axis_mode()
+        axis_label = {"TOF": "ns", "KE": "eV", "BE": "eV"}[axis_mode]
+        
+        logger.info(f"Horizontal profile peak fit:")
+        logger.info(f"  Center: {center:.3f} ± {perr[1]:.3f} {axis_label}")
+        logger.info(f"  FWHM: {fwhm:.3f} ± {fwhm_err:.3f} {axis_label}")
+        
+        # Plot fit
+        x_fit = np.linspace(x_min, x_max, 200)
+        y_fit = gaussian_profile(x_fit, *popt)
+        line, = self.ax_hprof.plot(x_fit, y_fit, 'r-', linewidth=2, 
+                                     label=f'FWHM={fwhm:.2f} {axis_label}')
+        self._peak_fit_lines.append(line)
+        self.ax_hprof.legend(fontsize=8)
+        
+        # Update label
+        self.peak_result_label.setText(
+            f"Horizontal Profile:\n"
+            f"FWHM: {fwhm:.3f} ± {fwhm_err:.3f} {axis_label}\n"
+            f"Center: {center:.3f} {axis_label}\n"
+            f"Amplitude: {amp:.2e}"
+        )
+        
+        self.btn_clear_peaks.setEnabled(True)
+        self.canvas.draw_idle()
+        
+    except Exception as e:
+        logger.exception(f"Horizontal peak fitting failed: {e}")
+        QMessageBox.warning(self, "Fit Failed", f"Could not fit peak:\n{str(e)}")
+
+    def _fit_vertical_peak(self, y_min, y_max):
+        """Fit Gaussian to vertical profile (File Index axis)"""
+        if not self.data:
+            return
+    
+        mode = self.mode_combo.currentIndex()
+        intensity = self.data["analog"].copy() if mode == 0 else self.data["counting"].copy()
+    
+    # Apply sign correction
+        if mode == 0:
+            intensity = -intensity
+        else:
+            intensity = intensity
+    
+    # Get current limits
+        xmin = _safe_float(self.spin_xmin.value())
+        xmax = _safe_float(self.spin_xmax.value())
+        axis = self._compute_axis(self.data["tof"])
+    
+    # Filter by y range
+        y_min_int = max(0, int(y_min))
+        y_max_int = min(intensity.shape[0], int(y_max))
+    
+        if y_min_int >= y_max_int:
+            QMessageBox.warning(self, "Invalid Range", "Invalid y range")
+            return
+    
+    # Filter by x range
+        idx_x = np.where((axis >= xmin) & (axis <= xmax))[0]
+        if idx_x.size == 0:
+            idx_x = np.arange(axis.size)
+    
+    # Calculate vertical profile
+        sliced_data = intensity[y_min_int:y_max_int, :][:, idx_x]
+        x_data = np.mean(sliced_data, axis=1)
+        y_data = np.arange(y_min_int, y_max_int)
+    
+        if len(x_data) < 4:
+            QMessageBox.warning(self, "Insufficient Data", "Select a wider region")
+            return
+    
+        try:
+        # Initial guess
+            amp_guess = np.max(x_data) - np.min(x_data)
+            center_guess = y_data[np.argmax(x_data)]
+            sigma_guess = (y_max - y_min) / 4
+            offset_guess = np.min(x_data)
+        
+            p0 = [amp_guess, center_guess, sigma_guess, offset_guess]
+        
+        # Fit
+            popt, pcov = curve_fit(gaussian_profile, y_data, x_data, p0=p0, maxfev=5000)
+            amp, center, sigma, offset = popt
+            perr = np.sqrt(np.diag(pcov))
+        
+        # Calculate FWHM
+            fwhm = calculate_fwhm(abs(sigma))
+            fwhm_err = calculate_fwhm(perr[2])
+        
+            logger.info(f"Vertical profile peak fit:")
+            logger.info(f"  Center: {center:.1f} ± {perr[1]:.1f} (file index)")
+            logger.info(f"  FWHM: {fwhm:.1f} ± {fwhm_err:.1f} (file index)")
+        
+        # Plot fit
+            y_fit = np.linspace(y_min, y_max, 200)
+            x_fit = gaussian_profile(y_fit, *popt)
+            line, = self.ax_vprof.plot(x_fit, y_fit, 'r-', linewidth=2,
+                                         label=f'FWHM={fwhm:.1f} files')
+            self._peak_fit_lines.append(line)
+            self.ax_vprof.legend(fontsize=8)
+        
+        # Update label
+            self.peak_result_label.setText(
+                f"Vertical Profile:\n"
+                f"FWHM: {fwhm:.1f} ± {fwhm_err:.1f} files\n"
+                f"Center: {center:.1f} (file index)\n"
+                f"Amplitude: {amp:.2e}"
+            )
+        
+            self.btn_clear_peaks.setEnabled(True)
+            self.canvas.draw_idle()
+        
+        except Exception as e:
+            logger.exception(f"Vertical peak fitting failed: {e}")
+            QMessageBox.warning(self, "Fit Failed", f"Could not fit peak:\n{str(e)}")
 
 
+        
 
     def _on_mouse_move(self, event):
         """Handle mouse motion to display coordinates"""
