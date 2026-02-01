@@ -7,18 +7,6 @@
 # [TODO-001] Plot Limits:  Update on Enter Key Press []
 # [TODO-002] Energy Calibration:  Validation & Documentation [X]
 # [TODO-003] Auto-Update:  Configurable Interval Selector []
-# ------------------------------------------------------------------------------
-# PRIORITY 2
-# ------------------------------------------------------------------------------
-# [TODO-004] Feature: Profile Overlay from Reference Folder [X]
-# [TODO-005] Export:  Individual Plot as PDF [X]
-# [TODO-006] Feature:  Vertical Profile FWHM Analysis [X]
-# [TODO-007] Export: Fitted Parameters to CSV []
-# ------------------------------------------------------------------------------
-# PRIORITY 3
-# ------------------------------------------------------------------------------
-# [TODO-008] Session Management: Save Complete Analysis State []
-
 
 import sys
 import os
@@ -884,6 +872,11 @@ class AnalysisWindow(QMainWindow):
         self.btn_refit.setEnabled(False)  # Enabled after first analysis
         v.addWidget(self.btn_refit)
 
+        self.btn_export_csv = QPushButton("Export Fit to CSV")
+        self.btn_export_csv.clicked.connect(self._export_fit_to_csv)
+        self.btn_export_csv.setEnabled(False)  # Enabled after successful fit
+        v.addWidget(self.btn_export_csv)
+
         self.status = QLabel("Ready")
         self.status.setWordWrap(True)
         v.addWidget(self.status)
@@ -1377,6 +1370,108 @@ class AnalysisWindow(QMainWindow):
         
         self.canvas.draw_idle()
 
+
+
+    def _export_fit_to_csv(self):
+        """Export fit results and data to CSV file"""
+        if not self._last_analysis:
+            QMessageBox.warning(self, "No Data", "Run analysis first")
+            return
+        
+        result = self._last_analysis
+        
+        # Get default filename
+        folder_name = os.path.basename(self.folder) if self.folder else "analysis"
+        default_filename = f"{folder_name}_fit_results.csv"
+        
+        # Open file dialog
+        filename, _ = QFileDialog.getSaveFileName(
+            self,
+            "Export Fit Results to CSV",
+            default_filename,
+            "CSV Files (*.csv)"
+        )
+        
+        if not filename:
+            return  # User cancelled
+        
+        try:
+            import csv
+            
+            with open(filename, 'w', newline='') as csvfile:
+                writer = csv.writer(csvfile)
+                
+                # Header
+                writer.writerow(["# TOF Analysis Fit Results"])
+                writer.writerow([f"# Folder: {self.folder}"])
+                writer.writerow([f"# Model: {result.get('model_name', 'unknown')}"])
+                writer.writerow([f"# Fit Success: {result.get('fit_success', False)}"])
+                writer.writerow([])
+                
+                # Fit parameters
+                writer.writerow(["# FIT PARAMETERS"])
+                p = result.get("p")
+                perr = result.get("perr")
+                model_name = result.get("model_name", "two_exp")
+                
+                if p is not None and perr is not None:
+                    writer.writerow(["Parameter", "Value", "Error", "Units"])
+                    
+                    if model_name == "one_exp":
+                        writer.writerow(["t0", f"{p[0]:.6f}", f"{perr[0]:.6f}", "fs"])
+                        writer.writerow(["sigma", f"{p[1]:.6f}", f"{perr[1]:.6f}", "fs"])
+                        writer.writerow(["t1", f"{p[2]:.6f}", f"{perr[2]:.6f}", "fs"])
+                        writer.writerow(["A1", f"{p[3]:.6f}", f"{perr[3]:.6f}", "a.u."])
+                        writer.writerow(["A3", f"{p[4]:.6f}", f"{perr[4]:.6f}", "a.u."])
+                        writer.writerow(["B", f"{p[5]:.6f}", f"{perr[5]:.6f}", "a.u."])
+                    else:  # two_exp
+                        writer.writerow(["t0", f"{p[0]:.6f}", f"{perr[0]:.6f}", "fs"])
+                        writer.writerow(["sigma", f"{p[1]:.6f}", f"{perr[1]:.6f}", "fs"])
+                        writer.writerow(["t1", f"{p[2]:.6f}", f"{perr[2]:.6f}", "fs"])
+                        writer.writerow(["t2", f"{p[3]:.6f}", f"{perr[3]:.6f}", "fs"])
+                        writer.writerow(["A1", f"{p[4]:.6f}", f"{perr[4]:.6f}", "a.u."])
+                        writer.writerow(["A2", f"{p[5]:.6f}", f"{perr[5]:.6f}", "a.u."])
+                        writer.writerow(["A3", f"{p[6]:.6f}", f"{perr[6]:.6f}", "a.u."])
+                        writer.writerow(["B", f"{p[7]:.6f}", f"{perr[7]:.6f}", "a.u."])
+                
+                writer.writerow([])
+                
+                # Data: delay, signal, fit curve, residuals
+                writer.writerow(["# DYNAMICS DATA"])
+                writer.writerow(["Delay_fs", "Signal", "Fit", "Residuals"])
+                
+                t_fs = result.get("t_fs")
+                S = result.get("S")
+                
+                if t_fs is not None and S is not None and p is not None:
+                    # Calculate fit curve
+                    if model_name == "one_exp":
+                        fit_curve = self.one_exp(t_fs, *p)
+                    else:
+                        fit_curve = self.two_exp(t_fs, *p)
+                    
+                    residuals = S - fit_curve
+                    
+                    # Write data rows
+                    for i in range(len(t_fs)):
+                        writer.writerow([
+                            f"{t_fs[i]:.6f}",
+                            f"{S[i]:.6e}",
+                            f"{fit_curve[i]:.6e}",
+                            f"{residuals[i]:.6e}"
+                        ])
+            
+            self.status.setText(f"Exported to {os.path.basename(filename)}")
+            logger.info(f"Fit results exported to: {filename}")
+            QMessageBox.information(self, "Export Successful", 
+                                   f"Fit results saved to:\n{filename}")
+            
+        except Exception as e:
+            logger.exception(f"CSV export failed: {e}")
+            QMessageBox.critical(self, "Export Failed", 
+                                f"Failed to export CSV:\n{str(e)}")
+
+
     def _on_analysis_finished(self, result):
         self.btn_run.setEnabled(True)
         if "error" in result:
@@ -1386,6 +1481,8 @@ class AnalysisWindow(QMainWindow):
 
         self._last_analysis = result
         self.btn_refit.setEnabled(True)  # Enable refit button
+        if result.get("fit_success"):
+            self.btn_export_csv.setEnabled(True)  # Enable export if fit succeeded
         self.status.setText("Analysis complete")
         
         # Log fit results if available
