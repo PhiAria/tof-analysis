@@ -2192,10 +2192,6 @@ class TOFExplorer(QMainWindow):
         self.btn_clear_peaks.setEnabled(False)
         peak_layout.addWidget(self.btn_clear_peaks)
 
-        self.peak_result_label = QLabel("FWHM: ---")
-        self.peak_result_label.setStyleSheet("QLabel { font-family: monospace; padding: 5px; background-color: #f0f0f0; border: 1px solid #d0d0d0; }")
-        self.peak_result_label.setWordWrap(True)
-        peak_layout.addWidget(self.peak_result_label)
 
         peak_group.setLayout(peak_layout)
         v.addWidget(peak_group)
