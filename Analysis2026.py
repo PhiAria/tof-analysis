@@ -2563,12 +2563,12 @@ class TOFExplorer(QMainWindow):
             logger.debug("Auto-watch: No changes detected")
 
 # Add helper method if not present
-def _extract_file_number(self, filepath):
-    """Extract numeric file index from TOF filename"""
-    import re
-    base = os.path.basename(filepath)
-    m = re.search(r'(\d+)', base)
-    return int(m.group(1)) if m else 0
+    def _extract_file_number(self, filepath):
+        """Extract numeric file index from TOF filename"""
+        base = os.path.basename(filepath)
+        m = re.search(r'(\d+)', base)
+        return int(m.group(1)) if m else 0
+    
     def _append_new_files(self, new_file_paths):
         """Incrementally load and append new TOF files to existing data"""
         if not self.data:
