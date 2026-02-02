@@ -1802,33 +1802,7 @@ class BaselineWindow(QMainWindow):
         self.status_label = QLabel("Ready")
         self.status_label.setWordWrap(True)
         v.addWidget(self.status_label)
-        # ==================== Peak Analysis ====================
-        peak_group = QGroupBox("Peak Analysis (Profiles)")
-        peak_layout = QVBoxLayout()
-
-        peak_info = QLabel("Enable selection, then click and drag\non horizontal or vertical profile to fit peak.")
-        peak_info.setWordWrap(True)
-        peak_info.setStyleSheet("QLabel { color: #666; font-size: 10px; }")
-        peak_layout.addWidget(peak_info)
-
-        self.btn_enable_peak = QPushButton("Enable Peak Selection")
-        self.btn_enable_peak.setCheckable(True)
-        self.btn_enable_peak.setEnabled(False)  # Enabled after data load
-        self.btn_enable_peak.clicked.connect(self._toggle_peak_selection)
-        peak_layout.addWidget(self.btn_enable_peak)
-
-        self.btn_clear_peaks = QPushButton("Clear Peak Fits")
-        self.btn_clear_peaks.clicked.connect(self._clear_peak_fits)
-        self.btn_clear_peaks.setEnabled(False)
-        peak_layout.addWidget(self.btn_clear_peaks)
-
-        self.peak_result_label = QLabel("FWHM: ---")
-        self.peak_result_label.setStyleSheet("QLabel { font-family: monospace; padding: 5px; background-color: #f0f0f0; border: 1px solid #d0d0d0; }")
-        self.peak_result_label.setWordWrap(True)
-        peak_layout.addWidget(self.peak_result_label)
-
-        peak_group.setLayout(peak_layout)
-        v.addWidget(peak_group)
+        
         v.addStretch()
         return v
     
