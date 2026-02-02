@@ -1,13 +1,3 @@
-# ==============================================================================
-# TOF ANALYSIS 2026 - DEVELOPMENT ROADMAP
-# ==============================================================================
-# ------------------------------------------------------------------------------
-# PRIORITY 1
-# ------------------------------------------------------------------------------
-# [TODO-001] Plot Limits:  Update on Enter Key Press [X]
-# [TODO-002] Energy Calibration:  Validation & Documentation [X]
-# [TODO-003] Auto-Update:  Configurable Interval Selector []
-
 import sys
 import os
 import glob
