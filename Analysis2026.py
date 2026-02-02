@@ -3425,39 +3425,69 @@ class TOFExplorer(QMainWindow):
  
     
     def _reset_baseline(self):
-        """Reset to original data (before baseline subtraction)"""
+        """Reset to original data (before baseline subtraction) - memory efficient"""
         if self._original_data is None:
             logger.info("No baseline to reset")
             return
         
-        # Restore original data
-        self.data["analog"] = self._original_data["analog"].copy()
-        self.data["counting"] = self._original_data["counting"].copy()
-        
-        # Clear baseline references
-        self._baseline_data = None
-        self._original_data = None
-        self._baseline_roi = None
-        
-        # Clean up loader if exists
-        if hasattr(self, '_baseline_loader') and self._baseline_loader is not None:
-            if self._baseline_loader.isRunning():
-                self._baseline_loader.wait()
-            self._baseline_loader.deleteLater()
-            self._baseline_loader = None
-        
-        # Disable reset button
-        self.btn_reset_baseline.setEnabled(False)
-        
-        # Close baseline window if open
-        if self._baseline_window is not None:
-            self._baseline_window.close()
-            self._baseline_window = None
-        
-        # Update display
-        self.update_plot()
-        
-        logger.info("Baseline subtraction reset - original data restored")
+        try:
+            logger.info("Resetting to original data...")
+            
+            # Copy back in chunks to avoid memory spike
+            chunk_size = 200
+            n_files = self._original_data["analog"].shape[0]
+            
+            for chunk_start in range(0, n_files, chunk_size):
+                chunk_end = min(chunk_start + chunk_size, n_files)
+                
+                # Copy chunk by chunk
+                self.data["analog"][chunk_start:chunk_end, :] = self._original_data["analog"][chunk_start:chunk_end, :].copy()
+                self.data["counting"][chunk_start:chunk_end, :] = self._original_data["counting"][chunk_start:chunk_end, :].copy()
+                
+                # Log progress for large datasets
+                if chunk_end % 1000 == 0:
+                    logger.info(f"  Restored {chunk_end}/{n_files} files...")
+            
+            logger.info("Original data restored")
+            
+            # Clear baseline references
+            self._baseline_data = None
+            self._original_data = None
+            self._baseline_roi = None
+            
+            # Clean up loader if exists
+            if hasattr(self, '_baseline_loader') and self._baseline_loader is not None:
+                if self._baseline_loader.isRunning():
+                    self._baseline_loader.wait()
+                self._baseline_loader.deleteLater()
+                self._baseline_loader = None
+            
+            # Disable reset button
+            self.btn_reset_baseline.setEnabled(False)
+            
+            # Close baseline window if open
+            if self._baseline_window is not None:
+                self._baseline_window.close()
+                self._baseline_window = None
+            
+            # Force garbage collection
+            import gc
+            gc.collect()
+            
+            # Update display
+            logger.info("Updating display after reset...")
+            self.update_plot()
+            
+            logger.info("Baseline subtraction reset complete")
+            
+        except MemoryError as me:
+            logger.error(f"Out of memory during reset: {me}")
+            # At this point data might be corrupted, warn user
+            self.progress_label.setText("Memory error - restart recommended")
+            
+        except Exception as e:
+            logger.exception(f"Reset failed: {e}")
+            self.progress_label.setText("Reset failed - see console")
 
     
     def closeEvent(self, event):
