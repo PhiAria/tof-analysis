@@ -2061,7 +2061,12 @@ class TOFExplorer(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("TOF Explorer 2026")
-        self.resize(1400, 900)
+        # Auto-size to 80% of screen width, maintain 16:9 aspect ratio
+        from PyQt5.QtWidgets import QDesktopWidget
+        screen = QDesktopWidget().screenGeometry()
+        width = int(screen.width() * 0.8)
+        height = int(width * 9 / 16)  # 16:9 aspect ratio
+        self.resize(width, height)
 
         self.data = None
         self.folder = None
@@ -2119,8 +2124,8 @@ class TOFExplorer(QMainWindow):
         central = QWidget()
         self.setCentralWidget(central)
         layout = QHBoxLayout(central)
-        layout.addLayout(self._create_left_panel(), 1)
-        layout.addLayout(self._create_right_panel(), 4)
+        layout.addLayout(self._create_left_panel(), 2)
+        layout.addLayout(self._create_right_panel(), 5)
 
     def _create_left_panel(self):
         v = QVBoxLayout()
