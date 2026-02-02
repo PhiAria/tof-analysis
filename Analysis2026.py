@@ -2461,7 +2461,7 @@ class TOFExplorer(QMainWindow):
         self.loader.finished.connect(self._on_loaded)
         self.loader.start()
 
-        self.last_file_list = sorted(glob.glob(os.path.join(folder, "TOF*.dat")))
+    
 
     def _on_loaded(self, data):
         self.btn_load.setEnabled(True)
@@ -2483,6 +2483,26 @@ class TOFExplorer(QMainWindow):
         self.pbar.setValue(50)
         self.progress_label.setText("Loaded, rendering...")
         self.update_plot()
+
+        if self.folder:
+            current_files_on_disk = sorted(glob.glob(os.path.join(self.folder, "TOF*.dat")))
+            n_files_in_memory = self.data["analog"].shape[0]
+            
+            if data.get("cached"):
+                # Loaded from cache - might have fewer files than on disk
+                # Set last_file_list to match what's in memory (first N files)
+                self.last_file_list = current_files_on_disk[:n_files_in_memory]
+                logger.info(f"Loaded from cache: {n_files_in_memory} files. Watch list initialized.")
+                
+                # Check if there are newer files
+                if len(current_files_on_disk) > n_files_in_memory:
+                    logger.info(f"Found {len(current_files_on_disk) - n_files_in_memory} newer files on disk.")
+                    logger.info("They will be detected on next auto-watch poll.")
+            else:
+                # Fresh load - should match exactly
+                self.last_file_list = current_files_on_disk
+                logger.info(f"Fresh load: {n_files_in_memory} files loaded and tracked.")
+
 
     def _init_spinboxes(self):
         for s in [self.spin_xmin, self.spin_xmax, self.spin_ymin, self.spin_ymax, self.spin_cmin, self.spin_cmax]:
