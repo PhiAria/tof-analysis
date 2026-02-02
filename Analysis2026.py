@@ -3316,7 +3316,7 @@ class TOFExplorer(QMainWindow):
         self._baseline_loader.start()
         
     
-     def _apply_baseline_subtraction(self, params):
+    def _apply_baseline_subtraction(self, params):
         """Apply baseline subtraction with given parameters - memory efficient"""
         if self._original_data is None:
             logger.error("Original data not available for subtraction")
