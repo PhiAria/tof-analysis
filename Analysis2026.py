@@ -3316,9 +3316,8 @@ class TOFExplorer(QMainWindow):
         self._baseline_loader.start()
         
     
-    
-    def _apply_baseline_subtraction(self, params):
-        """Apply baseline subtraction with given parameters"""
+     def _apply_baseline_subtraction(self, params):
+        """Apply baseline subtraction with given parameters - memory efficient"""
         if self._original_data is None:
             logger.error("Original data not available for subtraction")
             return
@@ -3328,50 +3327,102 @@ class TOFExplorer(QMainWindow):
         file_end = params["file_end"]
         file_by_file = params["file_by_file"]
 
-        #Make local copies of baseline arrays
-        baseline_analog = baseline_data["analog"].copy()
-        baseline_counting = baseline_data["counting"].copy()
+        # Make local copies of baseline arrays
+        baseline_analog = baseline_data["analog"]
+        baseline_counting = baseline_data["counting"]
 
-
-        # Start from unmodified original data (update_plot will compute/display its Sign)
+        # Start from unmodified original data
         self.data["analog"] = self._original_data["analog"].copy()
         self.data["counting"] = self._original_data["counting"].copy()
 
         try:
             if file_by_file:
-                # File-by-file subtraction
-                for i in range(file_start, file_end):
-                    if i < baseline_analog.shape[0] and i < self.data["analog"].shape[0]:
-                        self.data["analog"][i, :] -= baseline_analog[i, :]
-                        self.data["counting"][i, :] -= baseline_counting[i, :]
+                # File-by-file subtraction - in-place, memory efficient
+                max_files = min(baseline_analog.shape[0], self.data["analog"].shape[0])
+                actual_end = min(file_end, max_files)
+                
+                logger.info(f"Applying file-by-file subtraction: files {file_start}-{actual_end}")
+                
+                # Process in chunks to avoid memory spikes
+                chunk_size = 100
+                for chunk_start in range(file_start, actual_end, chunk_size):
+                    chunk_end = min(chunk_start + chunk_size, actual_end)
+                    
+                    # In-place subtraction for this chunk
+                    self.data["analog"][chunk_start:chunk_end, :] -= baseline_analog[chunk_start:chunk_end, :]
+                    self.data["counting"][chunk_start:chunk_end, :] -= baseline_counting[chunk_start:chunk_end, :]
+                    
+                    # Log progress for large datasets
+                    if (chunk_end - file_start) % 500 == 0:
+                        logger.info(f"  Processed {chunk_end - file_start} files...")
 
-                logger.info(
-                    f"Baseline subtraction successfully applied and active "
-                    f"(File-by-file mode, files {file_start}-{file_end})"
-                )
+                logger.info(f"File-by-file subtraction complete")
+                
             else:
-                # Total average mode - compute average from baseline ROI (already sign-corrected)
-                baseline_avg_analog = np.mean(baseline_analog[file_start:file_end, :], axis=0)
-                baseline_avg_counting = np.mean(baseline_counting[file_start:file_end, :], axis=0)
+                # Total average mode - compute baseline average
+                logger.info(f"Computing baseline average from files {file_start}-{file_end}")
+                
+                # Compute average in chunks to reduce memory usage
+                n_tof = baseline_analog.shape[1]
+                baseline_avg_analog = np.zeros(n_tof, dtype=np.float64)
+                baseline_avg_counting = np.zeros(n_tof, dtype=np.float64)
+                
+                n_files = file_end - file_start
+                for i in range(file_start, file_end):
+                    baseline_avg_analog += baseline_analog[i, :] / n_files
+                    baseline_avg_counting += baseline_counting[i, :] / n_files
+                
+                logger.info("Applying averaged baseline subtraction to all files")
+                
+                # Subtract in chunks to avoid memory spike
+                chunk_size = 200
+                n_main_files = self.data["analog"].shape[0]
+                
+                for chunk_start in range(0, n_main_files, chunk_size):
+                    chunk_end = min(chunk_start + chunk_size, n_main_files)
+                    
+                    # In-place subtraction
+                    self.data["analog"][chunk_start:chunk_end, :] -= baseline_avg_analog[np.newaxis, :]
+                    self.data["counting"][chunk_start:chunk_end, :] -= baseline_avg_counting[np.newaxis, :]
+                    
+                    # Log progress
+                    if chunk_end % 1000 == 0:
+                        logger.info(f"  Processed {chunk_end}/{n_main_files} files...")
 
-                # Subtract from ALL files in main data
-                self.data["analog"] -= baseline_avg_analog
-                self.data["counting"] -= baseline_avg_counting 
+                logger.info(f"Averaged baseline subtraction complete")
 
-
-                logger.info(
-                    f"Baseline subtraction successfully applied and active "
-                    f"(Total average mode, baseline computed from files {file_start}-{file_end}, "
-                    f"subtracted from all main data files)"
-                )
-
-            # Enable reset button and refresh display
+            # Enable reset button
             self.btn_reset_baseline.setEnabled(True)
+            
+            # Force garbage collection before plotting
+            import gc
+            gc.collect()
+            
+            # Update plot
+            logger.info("Updating display...")
             self.update_plot()
+            logger.info("Baseline subtraction successfully applied")
 
+        except MemoryError as me:
+            logger.error(f"Out of memory during subtraction: {me}")
+            # Try to recover
+            try:
+                self.data["analog"] = self._original_data["analog"].copy()
+                self.data["counting"] = self._original_data["counting"].copy()
+                logger.info("Restored original data after memory error")
+            except:
+                pass
+            
         except Exception as e:
             logger.exception(f"Baseline subtraction failed: {e}")
-            QMessageBox.critical(self, "Subtraction Error", f"Failed to apply subtraction:\n{str(e)}")
+            # Try to recover
+            try:
+                self.data["analog"] = self._original_data["analog"].copy()
+                self.data["counting"] = self._original_data["counting"].copy()
+                logger.info("Restored original data after error")
+            except:
+                pass   
+ 
     
     def _reset_baseline(self):
         """Reset to original data (before baseline subtraction)"""
