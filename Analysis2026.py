@@ -2522,13 +2522,11 @@ class TOFExplorer(QMainWindow):
         else:
             self.watch_timer.stop()
 
+
     def _poll_folder(self):
         if not self.folder:
             return
-        cur = sorted(glob. glob(os. path.join(self.folder, "TOF*. dat")))
-        
-        # Log every poll attempt
-        logger. info(f"Auto-watch:  Checking folder (found {len(cur)} files)")
+        cur = sorted(glob.glob(os.path.join(self.folder, "TOF*.dat")))
         
         # If no files exist, don't do anything
         if len(cur) == 0:
@@ -2540,28 +2538,25 @@ class TOFExplorer(QMainWindow):
         last_set = set(self.last_file_list)
 
         if cur_set != last_set:
-            new_files = list(cur_set - last_set)  # Files in cur but not in last
-            removed_files = list(last_set - cur_set)  # Files in last but not in cur
+            new_files = list(cur_set - last_set)
+            removed_files = list(last_set - cur_set)
     
             if removed_files:
                 logger.info(f"Files removed: {len(removed_files)}; full reload required")
                 self._start_loading(self.folder)
-                self.last_file_list = cur
             elif new_files:
-        # Sort new files numerically for proper order
+                # Sort new files numerically for proper order
                 new_files_sorted = sorted(new_files, key=lambda f: self._extract_file_number(f))
                 logger.info(f"New files detected: {len(new_files_sorted)}")
                 logger.info(f"New files: {[os.path.basename(f) for f in new_files_sorted[:5]]}{'...' if len(new_files_sorted) > 5 else ''}")
                 self._append_new_files(new_files_sorted)
-                self.last_file_list = cur
             else:
-        # This shouldn't happen, but just in case
+                # This shouldn't happen, but just in case
                 logger.warning("File list changed but no new/removed files detected; full reload")
                 self._start_loading(self.folder)
-                self.last_file_list = cur
         else:
             logger.debug("Auto-watch: No changes detected")
-
+    
 # Add helper method if not present
     def _extract_file_number(self, filepath):
         """Extract numeric file index from TOF filename"""
@@ -2625,6 +2620,8 @@ class TOFExplorer(QMainWindow):
             )
             
             self. pbar.setValue(90)
+
+            self.last_file_list = sorted(self.last_file_list + new_file_paths)
             
 # Store current ROI before updating
             old_ymin = self.spin_ymin.value()
