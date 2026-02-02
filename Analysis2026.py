@@ -2180,20 +2180,23 @@ class TOFExplorer(QMainWindow):
         dg.addWidget(QLabel("Calibration:"))
         dg.addWidget(self.calib_combo)
 
+
         self.spin_eph = QDoubleSpinBox()
         self.spin_eph.setRange(0, 100)
         self.spin_eph.setDecimals(3)
         self.spin_eph.setValue(29.6)
-        self.spin_eph.valueChanged.connect(lambda *_: (self._axis_mode_changed(force=False), self.update_plot()))
+        self.spin_eph.setKeyboardTracking(False)  # Only update on Enter/focus loss
+        self.spin_eph.editingFinished.connect(lambda: (self._axis_mode_changed(force=False), self.update_plot()))
         dg.addWidget(QLabel("Photon E (eV):"))
         dg.addWidget(self.spin_eph)
 
         self.spin_view_tof_offset = QDoubleSpinBox()
         self.spin_view_tof_offset.setDecimals(3)
         self.spin_view_tof_offset.setRange(-1000, 1000)
-        self.spin_view_tof_offset.setSingleStep(0.01)   # or 0.001 if you prefer
+        self.spin_view_tof_offset.setSingleStep(0.01)
         self.spin_view_tof_offset.setValue(_safe_float(GLOBAL_SETTINGS["calibration"]["TOF_OFFSET_NS"]))
-        self.spin_view_tof_offset.valueChanged.connect(self._on_view_calib_changed)
+        self.spin_view_tof_offset.setKeyboardTracking(False)  # Only update on Enter/focus loss
+        self.spin_view_tof_offset.editingFinished.connect(self._apply_view_calib)
         dg.addWidget(QLabel("TOF offset (ns):"))
         dg.addWidget(self.spin_view_tof_offset)
 
@@ -2202,10 +2205,12 @@ class TOFExplorer(QMainWindow):
         self.spin_view_workfunc.setRange(-10, 10)
         self.spin_view_workfunc.setSingleStep(0.01)
         self.spin_view_workfunc.setValue(_safe_float(GLOBAL_SETTINGS["calibration"]["WORK_FUNCTION_EV"]))
-        self.spin_view_workfunc.valueChanged.connect(self._on_view_calib_changed)
+        self.spin_view_workfunc.setKeyboardTracking(False)  # Only update on Enter/focus loss
+        self.spin_view_workfunc.editingFinished.connect(self._apply_view_calib)
         dg.addWidget(QLabel("Work function (eV):"))
         dg.addWidget(self.spin_view_workfunc)
-
+        
+       
         self.cmap_combo = QComboBox()
         cmap_list = GLOBAL_SETTINGS["ui"]["colormaps"]
         self. cmap_combo.addItems(cmap_list)
@@ -2406,8 +2411,6 @@ class TOFExplorer(QMainWindow):
             axis = self._compute_axis(self.data["tof"])
             self._reset_x_limits_to_axis(axis)
 
-    def _on_color_limit_changed(self, val=None):
-        self._color_debounce_timer.start(120)
 
     def _apply_color_limits(self):
         try:
@@ -2441,8 +2444,6 @@ class TOFExplorer(QMainWindow):
             self.update_plot()
 
 
-    def _on_view_calib_changed(self):
-        self._calib_debounce_timer.start(200)
 
 
     def _on_cmap_changed(self):
