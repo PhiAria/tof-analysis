@@ -2225,33 +2225,40 @@ class TOFExplorer(QMainWindow):
         self.spin_xmin = QDoubleSpinBox()
         self.spin_xmin.setDecimals(0)
         self.spin_xmin.setRange(-1e12, 1e12)
-        self.spin_xmin.valueChanged.connect(self._limit_changed)
+        self.spin_xmin.setKeyboardTracking(False)  # Only update on Enter/focus loss
+        self.spin_xmin.editingFinished.connect(self._apply_limits)
 
         self.spin_xmax = QDoubleSpinBox()
         self.spin_xmax.setDecimals(0)
         self.spin_xmax.setRange(-1e12, 1e12)
-        self.spin_xmax.valueChanged.connect(self._limit_changed)
+        self.spin_xmax.setKeyboardTracking(False)  # Only update on Enter/focus loss
+        self.spin_xmax.editingFinished.connect(self._apply_limits)
 
         self.spin_ymin = QSpinBox()
         self.spin_ymin.setRange(0, 100000)
-        self.spin_ymin.valueChanged.connect(self._limit_changed)
+        self.spin_ymin.setKeyboardTracking(False)  # Only update on Enter/focus loss
+        self.spin_ymin.editingFinished.connect(self._apply_limits)
 
         self.spin_ymax = QSpinBox()
         self.spin_ymax.setRange(0, 100000)
-        self.spin_ymax.valueChanged.connect(self._limit_changed)
+        self.spin_ymax.setKeyboardTracking(False)  # Only update on Enter/focus loss
+        self.spin_ymax.editingFinished.connect(self._apply_limits)
 
         self.spin_cmin = QDoubleSpinBox()
         self.spin_cmin.setDecimals(3)
         self.spin_cmin.setRange(-1e12, 1e12)
         self.spin_cmin.setSingleStep(0.01)
-        self.spin_cmin.valueChanged.connect(self._on_color_limit_changed)
-        
+        self.spin_cmin.setKeyboardTracking(False)  # Only update on Enter/focus loss
+        self.spin_cmin.editingFinished.connect(self._apply_color_limits)
+
         self.spin_cmax = QDoubleSpinBox()
         self.spin_cmax.setDecimals(3)
         self.spin_cmax.setRange(-1e12, 1e12)
         self.spin_cmax.setSingleStep(0.01)
-        self.spin_cmax.valueChanged.connect(self._on_color_limit_changed)
+        self.spin_cmax.setKeyboardTracking(False)  # Only update on Enter/focus loss
+        self.spin_cmax.editingFinished.connect(self._apply_color_limits)
 
+        
         lg.addWidget(QLabel("X min:"), 0, 0)
         lg.addWidget(self.spin_xmin, 0, 1)
         lg.addWidget(QLabel("X max:"), 1, 0)
@@ -2427,6 +2434,12 @@ class TOFExplorer(QMainWindow):
     def _limit_changed(self):
         if not self._updating:
             self._limit_debounce_timer.start(150)
+
+    def _apply_limits(self):
+        """Apply limit changes immediately (called on Enter key or focus loss)"""
+        if not self._updating:
+            self.update_plot()
+
 
     def _on_view_calib_changed(self):
         self._calib_debounce_timer.start(200)
