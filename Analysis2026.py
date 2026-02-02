@@ -2525,26 +2525,40 @@ class TOFExplorer(QMainWindow):
             logger.info("Auto-watch: No files in folder, skipping")
             return
         
-        if cur != self.last_file_list:
-            new_files = [f for f in cur if f not in self.last_file_list]
-            removed_files = [f for f in self.last_file_list if f not in cur]
-            
+        # Convert to sets for faster comparison
+        cur_set = set(cur)
+        last_set = set(self.last_file_list)
+
+        if cur_set != last_set:
+            new_files = list(cur_set - last_set)  # Files in cur but not in last
+            removed_files = list(last_set - cur_set)  # Files in last but not in cur
+    
             if removed_files:
-                logger.info(f"Files removed: {len(removed_files)}; full reload")
+                logger.info(f"Files removed: {len(removed_files)}; full reload required")
                 self._start_loading(self.folder)
-                self. last_file_list = cur
-            elif new_files:
-                logger.info(f"New files detected: {len(new_files)}; appending")
-                logger.info(f"New files: {[os.path.basename(f) for f in new_files]}")
-                self._append_new_files(new_files)
                 self.last_file_list = cur
-            else: 
-                logger.info("Files changed; full reload")
+            elif new_files:
+        # Sort new files numerically for proper order
+                new_files_sorted = sorted(new_files, key=lambda f: self._extract_file_number(f))
+                logger.info(f"New files detected: {len(new_files_sorted)}")
+                logger.info(f"New files: {[os.path.basename(f) for f in new_files_sorted[:5]]}{'...' if len(new_files_sorted) > 5 else ''}")
+                self._append_new_files(new_files_sorted)
+                self.last_file_list = cur
+            else:
+        # This shouldn't happen, but just in case
+                logger.warning("File list changed but no new/removed files detected; full reload")
                 self._start_loading(self.folder)
                 self.last_file_list = cur
         else:
-            logger.info("Auto-watch: No changes detected")
+            logger.debug("Auto-watch: No changes detected")
 
+# Add helper method if not present
+def _extract_file_number(self, filepath):
+    """Extract numeric file index from TOF filename"""
+    import re
+    base = os.path.basename(filepath)
+    m = re.search(r'(\d+)', base)
+    return int(m.group(1)) if m else 0
     def _append_new_files(self, new_file_paths):
         """Incrementally load and append new TOF files to existing data"""
         if not self.data:
@@ -2602,12 +2616,42 @@ class TOFExplorer(QMainWindow):
             
             self. pbar.setValue(90)
             
+# Store current ROI before updating
+            old_ymin = self.spin_ymin.value()
+            old_ymax = self.spin_ymax.value()
+            old_xmin = self.spin_xmin.value()
+            old_xmax = self.spin_xmax.value()
+
             n_files = self.data["analog"].shape[0]
             self.spin_ymax.blockSignals(True)
+            self.spin_ymin.blockSignals(True)
+            self.spin_xmin.blockSignals(True)
+            self.spin_xmax.blockSignals(True)
+
+# Update maximum allowed range
             self.spin_ymax.setMaximum(n_files)
-            self.spin_ymax.setValue(n_files)
+
+# Restore previous ROI if it's still valid
+            if old_ymax <= n_files:
+    # Old ROI still fits - keep it
+                self.spin_ymin.setValue(old_ymin)
+                self.spin_ymax.setValue(old_ymax)
+                logger.info(f"Maintained ROI: Y={old_ymin}-{old_ymax}")
+            else:
+    # Old ROI exceeds new data - extend to include new files
+                self.spin_ymin.setValue(old_ymin)
+                self.spin_ymax.setValue(n_files)
+                logger.info(f"Extended ROI to include new files: Y={old_ymin}-{n_files}")
+
+# Restore X limits
+            self.spin_xmin.setValue(old_xmin)
+            self.spin_xmax.setValue(old_xmax)
+
             self.spin_ymax.blockSignals(False)
-            
+            self.spin_ymin.blockSignals(False)
+            self.spin_xmin.blockSignals(False)
+            self.spin_xmax.blockSignals(False)
+
             self.update_plot()
             
             self. pbar.setValue(100)
