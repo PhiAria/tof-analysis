@@ -2155,7 +2155,7 @@ class TOFExplorer(QMainWindow):
         self.spin_eph.setDecimals(3)
         self.spin_eph.setValue(29.6)
         self.spin_eph.setKeyboardTracking(False)  # Only update on Enter/focus loss
-        self.spin_eph.editingFinished.connect(lambda: (self._axis_mode_changed(force=False), self.update_plot()))
+        self.spin_eph.editingFinished.connect(self._on_photon_energy_changed)
         dg.addWidget(QLabel("Photon E (eV):"))
         dg.addWidget(self.spin_eph)
 
@@ -2379,6 +2379,14 @@ class TOFExplorer(QMainWindow):
             self._last_axis_mode = mode
             axis = self._compute_axis(self.data["tof"])
             self._reset_x_limits_to_axis(axis)
+
+    def _on_photon_energy_changed(self):
+        """Handle photon energy change - only affects BE mode"""
+        if self._axis_mode() == "BE":
+            # Recalculate axis and reset limits only in BE mode
+            self._axis_mode_changed(force=True)
+        # Always update plot to show the new value in UI
+        self.update_plot()
 
 
     def _apply_color_limits(self):
