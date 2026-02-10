@@ -654,7 +654,14 @@ class AnalysisWindow(QMainWindow):
     def __init__(self, folder, data, main_window=None):
         super().__init__()
         self.setWindowTitle(f"Analysis: {os.path.basename(folder)}")
-        self.resize(1400, 900)
+        # Match main window sizing approach
+        from PyQt5.QtWidgets import QDesktopWidget
+        screen = QDesktopWidget().screenGeometry()
+        width = int(screen.width() * 0.85)
+        height = int(screen.height() * 0.80)
+        width = max(width, 1200)
+        height = max(height, 700)
+        self.resize(width, height)
         self.folder = folder
         self.data = data
         self.main_window = main_window
@@ -2025,11 +2032,18 @@ class TOFExplorer(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("TOF Explorer 2026")
-        # Auto-size to 80% of screen width, maintain 16:9 aspect ratio
+        # Auto-size to fit screen properly
         from PyQt5.QtWidgets import QDesktopWidget
         screen = QDesktopWidget().screenGeometry()
-        width = int(screen.width() * 0.8)
-        height = int(width * 9 / 16)  # 16:9 aspect ratio
+        
+        # Use 85% of screen width and 80% of screen height
+        width = int(screen.width() * 0.85)
+        height = int(screen.height() * 0.80)
+        
+        # Ensure minimum usable size
+        width = max(width, 1200)
+        height = max(height, 700)
+        
         self.resize(width, height)
 
         self.data = None
