@@ -525,55 +525,95 @@ class AnalysisWorker(QThread):
             # Calculate data-driven initial guesses
             S_max = np.max(S)
             S_min = np.min(S)
-            S_baseline = np.median(S[S < np.percentile(S, 10)])  # estimate background
-
-            # Find approximate t0 (where signal starts rising)
-            threshold = S_baseline + 0.1 * (S_max - S_baseline)
-            t0_idx = np.where(S > threshold)[0]
-            t0_guess = t_fs[t0_idx[0]] if len(t0_idx) > 0 else 0
-
-            # Estimate time constant from decay region
-            if len(t_fs[S > threshold]) > 10:
-                decay_region = S[t_fs > t0_guess]
-                decay_times = t_fs[t_fs > t0_guess]
-                if len(decay_region) > 2:
-                    # Rough decay constant from half-max
-                    half_max = (S_max + S_baseline) / 2
-                    t_half_idx = np.where(decay_region < half_max)[0]
-                    if len(t_half_idx) > 0:
-                        t1_guess = abs(decay_times[t_half_idx[0]] - t0_guess)
-                    else:
-                        t1_guess = (t_fs[-1] - t0_guess) / 3  # fallback
-                else:
-                    t1_guess = 1000
+            
+            # Better baseline estimation: use data well before/after peak
+            if len(S) > 20:
+                S_baseline = np.mean(np.concatenate([S[:10], S[-10:]]))
             else:
-                t1_guess = 1000
+                S_baseline = np.median(S[S < np.percentile(S, 10)])
+
+            # Find t0: where signal reaches 50% of maximum
+            threshold_low = S_baseline + 0.2 * (S_max - S_baseline)
+            threshold_high = S_baseline + 0.8 * (S_max - S_baseline)
+            
+            idx_low = np.where(S > threshold_low)[0]
+            idx_high = np.where(S > threshold_high)[0]
+            
+            if len(idx_low) > 0:
+                t0_guess = t_fs[idx_low[0]]
+            else:
+                t0_guess = t_fs[np.argmax(S)] - 100  # fallback: 100 fs before peak
+            
+            # Find peak position
+            t_peak_idx = np.argmax(S)
+            t_peak = t_fs[t_peak_idx]
+            
+            # Estimate decay time from half-life AFTER peak
+            after_peak_mask = t_fs > t_peak
+            if np.sum(after_peak_mask) > 5:
+                S_after = S[after_peak_mask]
+                t_after = t_fs[after_peak_mask]
+                half_max_after = (S_max + S_baseline) / 2
+                
+                # Find where signal drops to half max
+                idx_half = np.where(S_after < half_max_after)[0]
+                if len(idx_half) > 0:
+                    t_half = t_after[idx_half[0]]
+                    # Decay time ~ (t_half - t_peak) / ln(2) for exponential
+                    t1_guess = (t_half - t_peak) / 0.693
+                    t1_guess = max(t1_guess, 10)  # at least 10 fs
+                else:
+                    # No decay observed - signal stays high
+                    t1_guess = (t_fs[-1] - t_peak) * 2  # very slow
+            else:
+                t1_guess = 500  # default fallback
+
+            # Estimate IRF from rise time (10% to 90%)
+            rise_time = None
+            if len(idx_low) > 0 and len(idx_high) > 0:
+                rise_time = abs(t_fs[idx_high[0]] - t_fs[idx_low[0]])
+                # IRF sigma ~ rise_time / 2.2 for Gaussian
+                sig_guess = max(rise_time / 2.2, 20)
+            else:
+                sig_guess = 50  # default
+            
+            # If sig and t1 are too similar, they'll compete - prefer faster sig
+            if abs(sig_guess - t1_guess) < 50 and sig_guess > 50:
+                sig_guess = min(sig_guess, t1_guess / 2)
+                logger.info(f"Adjusted sig to avoid degeneracy with t1")
 
             # Scale amplitudes to data
             A_scale = S_max - S_baseline
 
+            # Log what we found
+            logger.info(f"Data analysis: S_max={S_max:.2e}, S_baseline={S_baseline:.2e}")
+            logger.info(f"  Peak at t={t_peak:.1f} fs, t0_guess={t0_guess:.1f} fs")
+            logger.info(f"  Rise time={rise_time:.1f} fs → sig_guess={sig_guess:.1f} fs" if rise_time else f"  sig_guess={sig_guess:.1f} fs (default)")
+            logger.info(f"  Decay t1_guess={t1_guess:.1f} fs")
+
             # Initial guesses for fitting
             if model_name == "one_exp":
                 p0 = [
-                    t0_guess,           # t0: where signal starts
-                    50,                 # sig: ~50 fs is typical IRF
-                    max(t1_guess, 100), # t1: at least 100 fs
-                    0.7 * A_scale,      # A1: most of the signal
-                    0.3 * A_scale,      # A3: step component
-                    S_baseline          # B: baseline
+                    t0_guess,
+                    sig_guess,
+                    t1_guess,
+                    0.7 * A_scale,      # A1: most signal in decay
+                    0.3 * A_scale,      # A3: some permanent signal
+                    S_baseline
                 ]
                 logger.info(f"Initial guess (one_exp): t0={p0[0]:.1f}, sig={p0[1]:.1f}, t1={p0[2]:.1f}")
                 logger.info(f"  A1={p0[3]:.2e}, A3={p0[4]:.2e}, B={p0[5]:.2e}")
             else:  # two_exp
+                # For two_exp: split into fast and slow components
                 p0 = [
-                    t0_guess,              # t0
-                    50,                    # sig
-                    max(t1_guess/3, 50),   # t1: fast component (100-500 fs)
-                    max(t1_guess*3, 500),  # t2: slow component (ps timescale)
-                    0.3 * A_scale,         # A1: fast decay amplitude
-                    0.4 * A_scale,         # A2: slow decay amplitude  
-                    0.3 * A_scale,         # A3: step
-                    S_baseline             # B
+                    t0_guess,
+                    sig_guess,
+                    t1_guess * 0.3,     # t1: fast component (30% of single-exp guess)
+                    t1_guess * 3,       # t2: slow component (3x single-exp guess)
+                    0.4 * A_scale,      # A1: fast amplitude
+                    0.3 * A_scale,      # A2: slow amplitude
+                    0.3 * A_scale,      # A3: step
+                    S_baseline
                 ]
                 logger.info(f"Initial guess (two_exp): t0={p0[0]:.1f}, sig={p0[1]:.1f}, t1={p0[2]:.1f}, t2={p0[3]:.1f}")
                 logger.info(f"  A1={p0[4]:.2e}, A2={p0[5]:.2e}, A3={p0[6]:.2e}, B={p0[7]:.2e}")
