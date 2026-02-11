@@ -763,7 +763,7 @@ class AnalysisWindow(QMainWindow):
         t1, t2 = np.maximum(t1, 1e-10), np.maximum(t2, 1e-10)
         return A1*0.5*(1+erf((dt/sig - sig/t1)/np.sqrt(2)))*np.exp(-dt/t1) + A2*0.5*(1+erf((dt/sig - sig/t2)/np.sqrt(2)))*np.exp(-dt/t2) + A3*0.5*(1+erf(dt/sig/np.sqrt(2))) + B
 
-        @staticmethod
+    @staticmethod
     def one_exp_decay(t, t0, sig, t1, A1, B):
         """Single exponential decay back to baseline (no step component)"""
         dt = t - t0
