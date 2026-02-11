@@ -636,15 +636,20 @@ class AnalysisWorker(QThread):
                     lower_bounds = [-1000, 1, 1, 1, 0, 0, 0, -np.inf]
                     upper_bounds = [1000, 1000, 100000, 100000, np.inf, np.inf, np.inf, np.inf]
                 
-                # Perform the fit with bounds
+                # Perform the fit with better algorithm settings
                 p_full, pcov = curve_fit(
                     fitfunc, 
                     t_fs, 
                     S, 
                     p0, 
                     bounds=(lower_bounds, upper_bounds),
-                    maxfev=10000
+                    maxfev=50000,           # More iterations
+                    method='trf',           # Trust Region Reflective (better for bounds)
+                    ftol=1e-12,             # Tighter tolerance
+                    xtol=1e-12,
+                    verbose=2               # Show fitting progress
                 )
+                logger.info(f"Fit converged after optimization")
                 perr = np.sqrt(np.diag(pcov))
                 fit_success = True
                 
@@ -741,6 +746,14 @@ class AnalysisWindow(QMainWindow):
         t1, t2 = np.maximum(t1, 1e-10), np.maximum(t2, 1e-10)
         return A1*0.5*(1+erf((dt/sig - sig/t1)/np.sqrt(2)))*np.exp(-dt/t1) + A2*0.5*(1+erf((dt/sig - sig/t2)/np.sqrt(2)))*np.exp(-dt/t2) + A3*0.5*(1+erf(dt/sig/np.sqrt(2))) + B
 
+        @staticmethod
+    def one_exp_decay(t, t0, sig, t1, A1, B):
+        """Single exponential decay back to baseline (no step component)"""
+        dt = t - t0
+        sig = np.maximum(sig, 1e-10)
+        t1 = np.maximum(t1, 1e-10)
+        return A1*0.5*(1+erf((dt/sig - sig/t1)/np.sqrt(2)))*np.exp(-dt/t1) + B
+
     def __init__(self, folder, data, main_window=None):
         super().__init__()
         self.setWindowTitle(f"Analysis: {os.path.basename(folder)}")
@@ -823,8 +836,8 @@ class AnalysisWindow(QMainWindow):
         row += 1
 
         self.model_combo = QComboBox()
-        self.model_combo.addItems(["one_exp", "two_exp"])
-        self.model_combo.setCurrentText(GLOBAL_SETTINGS["analysis"].get("model", "two_exp"))
+        self.model_combo.addItems(["one_exp_decay", "one_exp", "two_exp"])
+        self.model_combo.setCurrentText(GLOBAL_SETTINGS["analysis"].get("model", "one_exp_decay"))
         p.addWidget(QLabel("Model:"), row, 0)
         p.addWidget(self.model_combo, row, 1)
         row += 1
