@@ -592,7 +592,18 @@ class AnalysisWorker(QThread):
             logger.info(f"  Decay t1_guess={t1_guess:.1f} fs")
 
             # Initial guesses for fitting
-            if model_name == "one_exp":
+            if model_name == "one_exp_decay":
+                p0 = [
+                    t0_guess,
+                    sig_guess,
+                    t1_guess,
+                    A_scale,           # A1: all signal in decay (no step)
+                    S_baseline
+                ]
+                logger.info(f"Initial guess (one_exp_decay): t0={p0[0]:.1f}, sig={p0[1]:.1f}, t1={p0[2]:.1f}")
+                logger.info(f"  A1={p0[3]:.2e}, B={p0[4]:.2e}")
+                
+            elif model_name == "one_exp":
                 p0 = [
                     t0_guess,
                     sig_guess,
@@ -625,7 +636,13 @@ class AnalysisWorker(QThread):
             fit_success = False
             
             try:
-                if model_name == "one_exp":
+                if model_name == "one_exp_decay":
+                    fitfunc = AnalysisWindow.one_exp_decay
+                    # t0, sig, t1, A1, B (no A3!)
+                    lower_bounds = [-1000, 1, 1, 0, -np.inf]
+                    upper_bounds = [1000, 1000, 100000, np.inf, np.inf]
+                    
+                elif model_name == "one_exp":
                     fitfunc = AnalysisWindow.one_exp
                     # t0, sig, t1, A1, A3, B
                     lower_bounds = [-1000, 1, 1, 0, 0, -np.inf]
@@ -634,7 +651,7 @@ class AnalysisWorker(QThread):
                     fitfunc = AnalysisWindow.two_exp
                     # t0, sig, t1, t2, A1, A2, A3, B
                     lower_bounds = [-1000, 1, 1, 1, 0, 0, 0, -np.inf]
-                    upper_bounds = [1000, 1000, 100000, 100000, np.inf, np.inf, np.inf, np.inf]
+                    upper_bounds = [1000, 1000, 100000, 100000, np.inf, np.inf, np.inf, np.inf]   
                 
                 # Perform the fit with better algorithm settings
                 p_full, pcov = curve_fit(
@@ -1227,7 +1244,9 @@ class AnalysisWindow(QMainWindow):
         # Calculate residuals based on the actual model
         residuals = np.zeros_like(t_fs)
         if p is not None and len(p) > 0:
-            if model_name == "one_exp":
+            if model_name == "one_exp_decay":
+                fit_curve = self.one_exp_decay(t_fs, *p)
+            elif model_name == "one_exp":
                 fit_curve = self.one_exp(t_fs, *p)
             else:  # two_exp
                 fit_curve = self.two_exp(t_fs, *p)
@@ -1545,9 +1564,11 @@ class AnalysisWindow(QMainWindow):
                 
                 if t_fs is not None and S is not None and p is not None:
                     # Calculate fit curve
-                    if model_name == "one_exp":
+                    if model_name == "one_exp_decay":
+                        fit_curve = self.one_exp_decay(t_fs, *p)
+                    elif model_name == "one_exp":
                         fit_curve = self.one_exp(t_fs, *p)
-                    else:
+                    else:  # two_exp
                         fit_curve = self.two_exp(t_fs, *p)
                     
                     residuals = S - fit_curve
@@ -1593,7 +1614,14 @@ class AnalysisWindow(QMainWindow):
             perr = result["perr"]
             model_name = result['model_name']
             
-            if model_name == "one_exp":
+            if model_name == "one_exp_decay":
+                logger.info(f"  t0  = {p[0]:.6f} ± {perr[0]:.6f}")
+                logger.info(f"  sig = {p[1]:.6f} ± {perr[1]:.6f}")
+                logger.info(f"  t1  = {p[2]:.6f} ± {perr[2]:.6f}")
+                logger.info(f"  A1  = {p[3]:.6f} ± {perr[3]:.6f}")
+                logger.info(f"  B   = {p[4]:.6f} ± {perr[4]:.6f}")
+                
+            elif model_name == "one_exp":
                 logger.info(f"  t0  = {p[0]:.6f} ± {perr[0]:.6f}")
                 logger.info(f"  sig = {p[1]:.6f} ± {perr[1]:.6f}")
                 logger.info(f"  t1  = {p[2]:.6f} ± {perr[2]:.6f}")
@@ -1708,7 +1736,9 @@ class AnalysisWindow(QMainWindow):
             elif plot_name == "Dynamics Log":
                 ax.semilogy(t_fs, S, 'ko', ms=3, label='Data')
                 if p is not None and len(p) > 0:
-                    if model_name == "one_exp":
+                    if model_name == "one_exp_decay":
+                        fit_curve = self.one_exp_decay(t_fs, *p)
+                    elif model_name == "one_exp":
                         fit_curve = self.one_exp(t_fs, *p)
                     else:  # two_exp
                         fit_curve = self.two_exp(t_fs, *p)
@@ -1723,7 +1753,9 @@ class AnalysisWindow(QMainWindow):
             elif plot_name == "Dynamics Lin":
                 ax.plot(t_fs, S, 'ko', ms=3, label='Data')
                 if p is not None and len(p) > 0:
-                    if model_name == "one_exp": 
+                    if model_name == "one_exp_decay":
+                        fit_curve = self.one_exp_decay(t_fs, *p)
+                    elif model_name == "one_exp":
                         fit_curve = self.one_exp(t_fs, *p)
                     else:  # two_exp
                         fit_curve = self.two_exp(t_fs, *p)
@@ -1737,7 +1769,9 @@ class AnalysisWindow(QMainWindow):
                 
             elif plot_name == "Residuals":
                 if p is not None and len(p) > 0:
-                    if model_name == "one_exp":
+                    if model_name == "one_exp_decay":
+                        fit_curve = self.one_exp_decay(t_fs, *p)
+                    elif model_name == "one_exp":
                         fit_curve = self.one_exp(t_fs, *p)
                     else:  # two_exp
                         fit_curve = self.two_exp(t_fs, *p)
