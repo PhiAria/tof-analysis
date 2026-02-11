@@ -521,12 +521,62 @@ class AnalysisWorker(QThread):
             # Sum over TOF range - ON CNT DATA
             S = np.sum(rfCNT[:, si1:si2], axis=1)
             self.progress.emit(65)
+          
+            # Calculate data-driven initial guesses
+            S_max = np.max(S)
+            S_min = np.min(S)
+            S_baseline = np.median(S[S < np.percentile(S, 10)])  # estimate background
 
-            # Initial guesses for fitting (UPDATED to match notebook)
+            # Find approximate t0 (where signal starts rising)
+            threshold = S_baseline + 0.1 * (S_max - S_baseline)
+            t0_idx = np.where(S > threshold)[0]
+            t0_guess = t_fs[t0_idx[0]] if len(t0_idx) > 0 else 0
+
+            # Estimate time constant from decay region
+            if len(t_fs[S > threshold]) > 10:
+                decay_region = S[t_fs > t0_guess]
+                decay_times = t_fs[t_fs > t0_guess]
+                if len(decay_region) > 2:
+                    # Rough decay constant from half-max
+                    half_max = (S_max + S_baseline) / 2
+                    t_half_idx = np.where(decay_region < half_max)[0]
+                    if len(t_half_idx) > 0:
+                        t1_guess = abs(decay_times[t_half_idx[0]] - t0_guess)
+                    else:
+                        t1_guess = (t_fs[-1] - t0_guess) / 3  # fallback
+                else:
+                    t1_guess = 1000
+            else:
+                t1_guess = 1000
+
+            # Scale amplitudes to data
+            A_scale = S_max - S_baseline
+
+            # Initial guesses for fitting
             if model_name == "one_exp":
-                p0 = [0, 30, 3000, 30, 10, 10]
+                p0 = [
+                    t0_guess,           # t0: where signal starts
+                    50,                 # sig: ~50 fs is typical IRF
+                    max(t1_guess, 100), # t1: at least 100 fs
+                    0.7 * A_scale,      # A1: most of the signal
+                    0.3 * A_scale,      # A3: step component
+                    S_baseline          # B: baseline
+                ]
+                logger.info(f"Initial guess (one_exp): t0={p0[0]:.1f}, sig={p0[1]:.1f}, t1={p0[2]:.1f}")
+                logger.info(f"  A1={p0[3]:.2e}, A3={p0[4]:.2e}, B={p0[5]:.2e}")
             else:  # two_exp
-                p0 = [0, 30, 1000, 30000, 100, 10, 0, 100]
+                p0 = [
+                    t0_guess,              # t0
+                    50,                    # sig
+                    max(t1_guess/3, 50),   # t1: fast component (100-500 fs)
+                    max(t1_guess*3, 500),  # t2: slow component (ps timescale)
+                    0.3 * A_scale,         # A1: fast decay amplitude
+                    0.4 * A_scale,         # A2: slow decay amplitude  
+                    0.3 * A_scale,         # A3: step
+                    S_baseline             # B
+                ]
+                logger.info(f"Initial guess (two_exp): t0={p0[0]:.1f}, sig={p0[1]:.1f}, t1={p0[2]:.1f}, t2={p0[3]:.1f}")
+                logger.info(f"  A1={p0[4]:.2e}, A2={p0[5]:.2e}, A3={p0[6]:.2e}, B={p0[7]:.2e}")
             
             # ACTUAL CURVE FITTING
             p_full = None
