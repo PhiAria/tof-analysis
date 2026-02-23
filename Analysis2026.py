@@ -2574,6 +2574,9 @@ class TOFExplorer(QMainWindow):
             self._axis_mode_changed(force=True)
         # Always update plot to show the new value in UI
         self.update_plot()
+        # Refresh SC Corr BE plot in analysis window if open
+        if self._analysis_window is not None and self._analysis_window._last_analysis is not None:
+            self._analysis_window._create_or_update_artists(self._analysis_window._last_analysis)
 
 
     def _apply_color_limits(self):
@@ -2626,6 +2629,9 @@ class TOFExplorer(QMainWindow):
         if self._analysis_window is not None:
             self._analysis_window.spin_tof_offset.setValue(_safe_float(GLOBAL_SETTINGS["calibration"]["TOF_OFFSET_NS"]))
             self._analysis_window.spin_workfunc.setValue(_safe_float(GLOBAL_SETTINGS["calibration"]["WORK_FUNCTION_EV"]))
+            # Refresh SC Corr BE plot since BE axis depends on TOF offset and work function
+            if self._analysis_window._last_analysis is not None:
+                self._analysis_window._create_or_update_artists(self._analysis_window._last_analysis)
 
     def _dlg_load(self):
         folder = QFileDialog.getExistingDirectory(self, "Select Folder")
