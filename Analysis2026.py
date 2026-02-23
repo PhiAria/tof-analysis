@@ -1168,14 +1168,19 @@ class AnalysisWindow(QMainWindow):
             return
         
         ax = art["ax"]
+        # Guard: check the axes is still attached to the figure
+        if ax not in self.figure.axes:
+            return
         
         xmin = self.spin_plot_xmin.value()
         xmax = self.spin_plot_xmax.value()
         ymin = self.spin_plot_ymin.value()
         ymax = self.spin_plot_ymax.value()
         
-        ax.set_xlim(xmin, xmax)
-        ax.set_ylim(ymin, ymax)
+        if xmin < xmax:
+            ax.set_xlim(xmin, xmax)
+        if ymin < ymax:
+            ax.set_ylim(ymin, ymax)
         self.canvas.draw_idle()
     
     def _on_plot_color_changed(self):
@@ -1205,8 +1210,19 @@ class AnalysisWindow(QMainWindow):
             return
         
         ax = art["ax"]
-        ax.relim()
-        ax.autoscale_view()
+        if ax not in self.figure.axes:
+            return
+        
+        if plot_name in self.IMAGE_PLOTS:
+            # For image plots, restore from the imshow extent
+            im = art.get("im")
+            if im is not None:
+                ext = im.get_extent()  # [xmin, xmax, ymin, ymax]
+                ax.set_xlim(ext[0], ext[1])
+                ax.set_ylim(ext[2], ext[3])
+        else:
+            ax.relim()
+            ax.autoscale_view()
         
         # Update spinboxes
         xlim = ax.get_xlim()
@@ -1650,178 +1666,210 @@ class AnalysisWindow(QMainWindow):
 
     def _create_or_update_artists(self, result):
         """Create or update all plot artists"""
+        # Save existing axis limits before clearing
+        saved_limits = {}
+        for pname, art in self._plot_artists.items():
+            try:
+                ax = art["ax"]
+                saved_limits[pname] = {
+                    "xlim": ax.get_xlim(),
+                    "ylim": ax.get_ylim(),
+                }
+            except Exception:
+                pass
+
         self.figure.clear()
-        
-        fAVG = result["fAVG"]
-        fCNT = result["fCNT"]
-        rfCNT = result["rfCNT"]
-        rfAVG = result["rfAVG"]
-        edge_positions = result["edge_positions"]
-        fitted_edge = result.get("fitted_edge", np.array([]))
-        S = result["S"]
-        p = result["p"]
-        t_fs = result["t_fs"]
-        fft = result.get("fft")
-        model_name = result.get("model_name", "two_exp")
 
-        # Determine grid layout based on visible plots
-        visible_plots = [name for name in self.ALL_PLOTS if self.chk_plots[name].isChecked()]
-        n_plots = len(visible_plots)
-        
-        if n_plots == 0:
-            return
+        # Block customize spinbox signals to prevent spurious limit changes during rebuild
+        _spinboxes = [self.spin_plot_xmin, self.spin_plot_xmax,
+                      self.spin_plot_ymin, self.spin_plot_ymax,
+                      self.spin_plot_cmin, self.spin_plot_cmax]
+        for _s in _spinboxes:
+            _s.blockSignals(True)
+        try:
+            fAVG = result["fAVG"]
+            fCNT = result["fCNT"]
+            rfCNT = result["rfCNT"]
+            rfAVG = result["rfAVG"]
+            edge_positions = result["edge_positions"]
+            fitted_edge = result.get("fitted_edge", np.array([]))
+            S = result["S"]
+            p = result["p"]
+            t_fs = result["t_fs"]
+            fft = result.get("fft")
+            model_name = result.get("model_name", "two_exp")
 
-        # Create grid
-        nrows = (n_plots + 2) // 3
-        ncols = min(n_plots, 3)
-        
-        self._plot_artists = {}
-        self._axes_list = []
-        
-        for idx, plot_name in enumerate(visible_plots):
-            ax = self.figure.add_subplot(nrows, ncols, idx + 1)
-            self._axes_list.append(ax)
+            # Determine grid layout based on visible plots
+            visible_plots = [name for name in self.ALL_PLOTS if self.chk_plots[name].isChecked()]
+            n_plots = len(visible_plots)
             
-            cfg = GLOBAL_SETTINGS["plots"].get(plot_name, {})
+            if n_plots == 0:
+                return
+
+            # Create grid
+            nrows = (n_plots + 2) // 3
+            ncols = min(n_plots, 3)
             
-            if plot_name == "Raw Avg": 
-                arr = -self.data["analog"]
-                denom = float(np.abs(np.max(arr))) if arr.size else 1.0
-                if denom == 0:
-                    denom = 1.0
-                im = ax.imshow(arr / denom, aspect='auto', origin='lower',
-                              extent=[self.TOF[0], self.TOF[-1], 0, arr.shape[0]],
-                              cmap=cfg.get("cmap", "viridis"),
-                              vmin=cfg.get("vmin", 0.0), vmax=cfg.get("vmax", 0.4))
-                ax.set_title("Raw Avg")
-                ax.set_xlabel("TOF (ns)")
-                ax.set_ylabel("File Index")
-                self.figure.colorbar(im, ax=ax)
-                self._plot_artists[plot_name] = {"ax": ax, "im": im}
+            self._plot_artists = {}
+            self._axes_list = []
+            
+            for idx, plot_name in enumerate(visible_plots):
+                ax = self.figure.add_subplot(nrows, ncols, idx + 1)
+                self._axes_list.append(ax)
                 
-            elif plot_name == "Folded": 
-                denom = float(np.abs(np.max(fCNT))) if fCNT.size else 1.0
-                if denom == 0:
-                    denom = 1.0
-                im = ax.imshow(fCNT / denom, aspect='auto', origin='lower',
-                              extent=[self.TOF[0], self.TOF[-1], t_fs[0], t_fs[-1]],
-                              cmap=cfg.get("cmap", "viridis"),
-                              vmin=cfg.get("vmin", 0.0), vmax=cfg.get("vmax", 0.4))
-                ax.set_title("Folded")
-                ax.set_xlabel("TOF (ns)")
-                ax.set_ylabel("Delay (fs)")
-                if edge_positions.size > 0:
-                    ax.plot(edge_positions, t_fs[:len(edge_positions)], 'r.', ms=2, label='Edge')
-                    if fitted_edge.size > 0:
-                        ax.plot(fitted_edge[:len(t_fs)], t_fs, 'g-', lw=1, label='Fit')
+                cfg = GLOBAL_SETTINGS["plots"].get(plot_name, {})
+                
+                if plot_name == "Raw Avg": 
+                    arr = -self.data["analog"]
+                    denom = float(np.abs(np.max(arr))) if arr.size else 1.0
+                    if denom == 0:
+                        denom = 1.0
+                    im = ax.imshow(arr / denom, aspect='auto', origin='lower',
+                                  extent=[self.TOF[0], self.TOF[-1], 0, arr.shape[0]],
+                                  cmap=cfg.get("cmap", "viridis"),
+                                  vmin=cfg.get("vmin", 0.0), vmax=cfg.get("vmax", 0.4))
+                    ax.set_title("Raw Avg")
+                    ax.set_xlabel("TOF (ns)")
+                    ax.set_ylabel("File Index")
+                    self.figure.colorbar(im, ax=ax)
+                    self._plot_artists[plot_name] = {"ax": ax, "im": im}
+                    
+                elif plot_name == "Folded": 
+                    denom = float(np.abs(np.max(fCNT))) if fCNT.size else 1.0
+                    if denom == 0:
+                        denom = 1.0
+                    im = ax.imshow(fCNT / denom, aspect='auto', origin='lower',
+                                  extent=[self.TOF[0], self.TOF[-1], t_fs[0], t_fs[-1]],
+                                  cmap=cfg.get("cmap", "viridis"),
+                                  vmin=cfg.get("vmin", 0.0), vmax=cfg.get("vmax", 0.4))
+                    ax.set_title("Folded")
+                    ax.set_xlabel("TOF (ns)")
+                    ax.set_ylabel("Delay (fs)")
+                    if edge_positions.size > 0:
+                        ax.plot(edge_positions, t_fs[:len(edge_positions)], 'r.', ms=2, label='Edge')
+                        if fitted_edge.size > 0:
+                            ax.plot(fitted_edge[:len(t_fs)], t_fs, 'g-', lw=1, label='Fit')
+                        ax.legend()
+                    self.figure.colorbar(im, ax=ax)
+                    self._plot_artists[plot_name] = {"ax": ax, "im": im}
+                    
+                elif plot_name == "SC Corrected":
+                    denom = float(np.abs(np.max(rfCNT))) if rfCNT.size else 1.0
+                    if denom == 0:
+                        denom = 1.0
+                    im = ax.imshow(rfCNT / denom, aspect='auto', origin='lower',
+                                  extent=[self.TOF[0], self.TOF[-1], t_fs[0], t_fs[-1]],
+                                  cmap=cfg.get("cmap", "viridis"),
+                                  vmin=cfg.get("vmin", 0.0), vmax=cfg.get("vmax", 0.4))
+                    ax.set_title("SC Corrected")
+                    ax.set_xlabel("TOF (ns)")
+                    ax.set_ylabel("Delay (fs)")
+                    self.figure.colorbar(im, ax=ax)
+                    self._plot_artists[plot_name] = {"ax": ax, "im": im}
+                    
+                elif plot_name == "SC Corr BE":
+                    cal = CalibrationConstants()
+                    bin_to_ns = bool(GLOBAL_SETTINGS["data"].get("BIN_TO_NS_FLAG", False))
+                    points_per_ns = _safe_float(GLOBAL_SETTINGS["data"].get("POINTS_PER_NS", 1.0 / 0.8))
+                    photon_energy = self.main_window.spin_eph.value() if self.main_window is not None else 29.6
+                    be_axis = tof_to_binding_energy(self.TOF, photon_energy, cal,
+                                                    bin_to_ns=bin_to_ns, points_per_ns=points_per_ns)
+                    be_valid = be_axis[np.isfinite(be_axis)]
+                    be_min = float(np.min(be_valid)) if be_valid.size else 0.0
+                    be_max = float(np.max(be_valid)) if be_valid.size else 1.0
+                    denom = float(np.abs(np.max(rfCNT))) if rfCNT.size else 1.0
+                    if denom == 0:
+                        denom = 1.0
+                    im = ax.imshow(
+                        np.flipud(rfCNT.T) / denom,
+                        aspect='auto',
+                        origin='lower',
+                        extent=[t_fs[0], t_fs[-1], be_min, be_max],
+                        cmap=cfg.get("cmap", "viridis"),
+                        vmin=cfg.get("vmin", 0.0),
+                        vmax=cfg.get("vmax", 0.4),
+                    )
+                    ax.set_title("SC Corr BE")
+                    ax.set_xlabel("Time (fs)")
+                    ax.set_ylabel("BE (eV)")
+                    self.figure.colorbar(im, ax=ax)
+                    self._plot_artists[plot_name] = {"ax": ax, "im": im}
+                    
+                elif plot_name == "FFT":
+                    if fft: 
+                        ax.semilogy(fft["freq_bins"], fft["power"], 'k-', lw=0.5)
+                        ax.set_title("FFT")
+                        ax.set_xlabel("Frequency bins")
+                        ax.set_ylabel("Power")
+                        ax.grid(True, alpha=0.3)
+                    self._plot_artists[plot_name] = {"ax": ax}
+                    
+                elif plot_name == "Dynamics Log":
+                    ax.semilogy(t_fs, S, 'ko', ms=3, label='Data')
+                    if p is not None and len(p) > 0:
+                        if model_name == "one_exp_decay":
+                            fit_curve = self.one_exp_decay(t_fs, *p)
+                        elif model_name == "one_exp":
+                            fit_curve = self.one_exp(t_fs, *p)
+                        else:  # two_exp
+                            fit_curve = self.two_exp(t_fs, *p)
+                        ax.semilogy(t_fs, fit_curve, 'r-', lw=1, label='Fit')
+                    ax.set_title("Dynamics (Log)")
+                    ax.set_xlabel("Delay (fs)")
+                    ax.set_ylabel("Intensity")
                     ax.legend()
-                self.figure.colorbar(im, ax=ax)
-                self._plot_artists[plot_name] = {"ax": ax, "im": im}
-                
-            elif plot_name == "SC Corrected":
-                denom = float(np.abs(np.max(rfCNT))) if rfCNT.size else 1.0
-                if denom == 0:
-                    denom = 1.0
-                im = ax.imshow(rfCNT / denom, aspect='auto', origin='lower',
-                              extent=[self.TOF[0], self.TOF[-1], t_fs[0], t_fs[-1]],
-                              cmap=cfg.get("cmap", "viridis"),
-                              vmin=cfg.get("vmin", 0.0), vmax=cfg.get("vmax", 0.4))
-                ax.set_title("SC Corrected")
-                ax.set_xlabel("TOF (ns)")
-                ax.set_ylabel("Delay (fs)")
-                self.figure.colorbar(im, ax=ax)
-                self._plot_artists[plot_name] = {"ax": ax, "im": im}
-                
-            elif plot_name == "SC Corr BE":
-                cal = CalibrationConstants()
-                bin_to_ns = bool(GLOBAL_SETTINGS["data"].get("BIN_TO_NS_FLAG", False))
-                points_per_ns = _safe_float(GLOBAL_SETTINGS["data"].get("POINTS_PER_NS", 1.0 / 0.8))
-                photon_energy = self.main_window.spin_eph.value() if self.main_window is not None else 29.6
-                be_axis = tof_to_binding_energy(self.TOF, photon_energy, cal,
-                                                bin_to_ns=bin_to_ns, points_per_ns=points_per_ns)
-                be_valid = be_axis[np.isfinite(be_axis)]
-                be_min = float(np.min(be_valid)) if be_valid.size else 0.0
-                be_max = float(np.max(be_valid)) if be_valid.size else 1.0
-                denom = float(np.abs(np.max(rfCNT))) if rfCNT.size else 1.0
-                if denom == 0:
-                    denom = 1.0
-                im = ax.imshow(
-                    np.flipud(rfCNT.T) / denom,
-                    aspect='auto',
-                    origin='lower',
-                    extent=[t_fs[0], t_fs[-1], be_min, be_max],
-                    cmap=cfg.get("cmap", "viridis"),
-                    vmin=cfg.get("vmin", 0.0),
-                    vmax=cfg.get("vmax", 0.4),
-                )
-                ax.set_title("SC Corr BE")
-                ax.set_xlabel("Time (fs)")
-                ax.set_ylabel("BE (eV)")
-                self.figure.colorbar(im, ax=ax)
-                self._plot_artists[plot_name] = {"ax": ax, "im": im}
-                
-            elif plot_name == "FFT":
-                if fft: 
-                    ax.semilogy(fft["freq_bins"], fft["power"], 'k-', lw=0.5)
-                    ax.set_title("FFT")
-                    ax.set_xlabel("Frequency bins")
-                    ax.set_ylabel("Power")
                     ax.grid(True, alpha=0.3)
-                self._plot_artists[plot_name] = {"ax": ax}
-                
-            elif plot_name == "Dynamics Log":
-                ax.semilogy(t_fs, S, 'ko', ms=3, label='Data')
-                if p is not None and len(p) > 0:
-                    if model_name == "one_exp_decay":
-                        fit_curve = self.one_exp_decay(t_fs, *p)
-                    elif model_name == "one_exp":
-                        fit_curve = self.one_exp(t_fs, *p)
-                    else:  # two_exp
-                        fit_curve = self.two_exp(t_fs, *p)
-                    ax.semilogy(t_fs, fit_curve, 'r-', lw=1, label='Fit')
-                ax.set_title("Dynamics (Log)")
-                ax.set_xlabel("Delay (fs)")
-                ax.set_ylabel("Intensity")
-                ax.legend()
-                ax.grid(True, alpha=0.3)
-                self._plot_artists[plot_name] = {"ax": ax}
-                
-            elif plot_name == "Dynamics Lin":
-                ax.plot(t_fs, S, 'ko', ms=3, label='Data')
-                if p is not None and len(p) > 0:
-                    if model_name == "one_exp_decay":
-                        fit_curve = self.one_exp_decay(t_fs, *p)
-                    elif model_name == "one_exp":
-                        fit_curve = self.one_exp(t_fs, *p)
-                    else:  # two_exp
-                        fit_curve = self.two_exp(t_fs, *p)
-                    ax.plot(t_fs, fit_curve, 'r-', lw=1, label='Fit')
-                ax.set_title("Dynamics (Linear)")
-                ax.set_xlabel("Delay (fs)")
-                ax.set_ylabel("Intensity")
-                ax.legend()
-                ax.grid(True, alpha=0.3)
-                self._plot_artists[plot_name] = {"ax": ax}
-                
-            elif plot_name == "Residuals":
-                if p is not None and len(p) > 0:
-                    if model_name == "one_exp_decay":
-                        fit_curve = self.one_exp_decay(t_fs, *p)
-                    elif model_name == "one_exp":
-                        fit_curve = self.one_exp(t_fs, *p)
-                    else:  # two_exp
-                        fit_curve = self.two_exp(t_fs, *p)
-                    residuals = S - fit_curve
-                    ax.plot(t_fs, residuals, 'ko', ms=2)
-                    ax.axhline(0, color='r', linestyle='--', lw=1)
-                ax.set_title("Residuals")
-                ax.set_xlabel("Delay (fs)")
-                ax.set_ylabel("Data - Fit")
-                ax.grid(True, alpha=0.3)
-                self._plot_artists[plot_name] = {"ax": ax}
+                    self._plot_artists[plot_name] = {"ax": ax}
+                    
+                elif plot_name == "Dynamics Lin":
+                    ax.plot(t_fs, S, 'ko', ms=3, label='Data')
+                    if p is not None and len(p) > 0:
+                        if model_name == "one_exp_decay":
+                            fit_curve = self.one_exp_decay(t_fs, *p)
+                        elif model_name == "one_exp":
+                            fit_curve = self.one_exp(t_fs, *p)
+                        else:  # two_exp
+                            fit_curve = self.two_exp(t_fs, *p)
+                        ax.plot(t_fs, fit_curve, 'r-', lw=1, label='Fit')
+                    ax.set_title("Dynamics (Linear)")
+                    ax.set_xlabel("Delay (fs)")
+                    ax.set_ylabel("Intensity")
+                    ax.legend()
+                    ax.grid(True, alpha=0.3)
+                    self._plot_artists[plot_name] = {"ax": ax}
+                    
+                elif plot_name == "Residuals":
+                    if p is not None and len(p) > 0:
+                        if model_name == "one_exp_decay":
+                            fit_curve = self.one_exp_decay(t_fs, *p)
+                        elif model_name == "one_exp":
+                            fit_curve = self.one_exp(t_fs, *p)
+                        else:  # two_exp
+                            fit_curve = self.two_exp(t_fs, *p)
+                        residuals = S - fit_curve
+                        ax.plot(t_fs, residuals, 'ko', ms=2)
+                        ax.axhline(0, color='r', linestyle='--', lw=1)
+                    ax.set_title("Residuals")
+                    ax.set_xlabel("Delay (fs)")
+                    ax.set_ylabel("Data - Fit")
+                    ax.grid(True, alpha=0.3)
+                    self._plot_artists[plot_name] = {"ax": ax}
 
-        self.figure.tight_layout()
-        self._artists_initialized = True
+            # Restore saved axis limits
+            for pname, limits in saved_limits.items():
+                art = self._plot_artists.get(pname)
+                if art:
+                    try:
+                        art["ax"].set_xlim(limits["xlim"])
+                        art["ax"].set_ylim(limits["ylim"])
+                    except Exception:
+                        pass
+
+            self.figure.tight_layout()
+            self._artists_initialized = True
+        finally:
+            for _s in _spinboxes:
+                _s.blockSignals(False)
         self.canvas.draw()
 
     def on_scroll(self, event):
