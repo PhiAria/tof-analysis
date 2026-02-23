@@ -45,6 +45,9 @@ DEFAULT_SETTINGS = {
         "SC Corrected": {"cmap": "viridis", "vmin": 0.0, "vmax": 0.4,
                          "slice": {"xmin": None, "xmax": None, "colmin": None, "colmax": None},
                          "ylim": {"ymin": None, "ymax": None}},
+        "SC Corr BE": {"cmap": "viridis", "vmin": 0.0, "vmax": 0.4,
+                       "slice": {"xmin": None, "xmax": None, "colmin": None, "colmax": None},
+                       "ylim": {"ymin": None, "ymax": None}},
         "FFT": {"slice": {"xmin": None, "xmax": None, "colmin": None, "colmax": None}},
         "Dynamics Log": {"ylim": {"ymin": None, "ymax": None}},
         "Dynamics Lin": {"ylim": {"ymin": None, "ymax": None}},
@@ -745,7 +748,7 @@ class AnalysisWorker(QThread):
 
 
 class AnalysisWindow(QMainWindow):
-    IMAGE_PLOTS = ["Raw Avg", "Folded", "SC Corrected"]
+    IMAGE_PLOTS = ["Raw Avg", "Folded", "SC Corrected", "SC Corr BE"]
     LINE_PLOTS = ["FFT", "Dynamics Log", "Dynamics Lin", "Residuals"]
     ALL_PLOTS = IMAGE_PLOTS + LINE_PLOTS
 
@@ -1256,6 +1259,7 @@ class AnalysisWindow(QMainWindow):
             "Raw Avg": {"arr": -self.data["analog"], "xaxis": self.TOF},
             "Folded": {"arr": fCNT, "xaxis": self.TOF},
             "SC Corrected":  {"arr": rfCNT, "xaxis":  self.TOF},
+            "SC Corr BE": {"arr": rfCNT, "xaxis": self.TOF},
             "FFT": {"x": fft["freq_bins"] if fft else np.array([]), "y": fft["power"] if fft else np.array([])},
             "Dynamics Log":  {"x": t_fs, "y": S},
             "Dynamics Lin": {"x": t_fs, "y": S},
@@ -1268,10 +1272,14 @@ class AnalysisWindow(QMainWindow):
             im = art["im"]
             arr = plot_data[plot_name]["arr"]
             xaxis = plot_data[plot_name]["xaxis"]
-            denom = float(np.abs(np.max(arr))) if arr.size else 1.0
+            if plot_name == "SC Corr BE":
+                display_arr = np.flipud(arr.T)
+            else:
+                display_arr = arr
+            denom = float(np.abs(np.max(display_arr))) if display_arr.size else 1.0
             if denom == 0:
                 denom = 1.0
-            im.set_data(arr / denom)
+            im.set_data(display_arr / denom)
             
             cfg = GLOBAL_SETTINGS["plots"].get(plot_name, {})
             im.set_cmap(cfg.get("cmap", "viridis"))
@@ -1721,6 +1729,34 @@ class AnalysisWindow(QMainWindow):
                 ax.set_title("SC Corrected")
                 ax.set_xlabel("TOF (ns)")
                 ax.set_ylabel("Delay (fs)")
+                self.figure.colorbar(im, ax=ax)
+                self._plot_artists[plot_name] = {"ax": ax, "im": im}
+                
+            elif plot_name == "SC Corr BE":
+                cal = CalibrationConstants()
+                bin_to_ns = bool(GLOBAL_SETTINGS["data"].get("BIN_TO_NS_FLAG", False))
+                points_per_ns = _safe_float(GLOBAL_SETTINGS["data"].get("POINTS_PER_NS", 1.0 / 0.8))
+                photon_energy = self.main_window.spin_eph.value() if self.main_window is not None else 29.6
+                be_axis = tof_to_binding_energy(self.TOF, photon_energy, cal,
+                                                bin_to_ns=bin_to_ns, points_per_ns=points_per_ns)
+                be_valid = be_axis[np.isfinite(be_axis)]
+                be_min = float(np.min(be_valid)) if be_valid.size else 0.0
+                be_max = float(np.max(be_valid)) if be_valid.size else 1.0
+                denom = float(np.abs(np.max(rfCNT))) if rfCNT.size else 1.0
+                if denom == 0:
+                    denom = 1.0
+                im = ax.imshow(
+                    np.flipud(rfCNT.T) / denom,
+                    aspect='auto',
+                    origin='lower',
+                    extent=[t_fs[0], t_fs[-1], be_min, be_max],
+                    cmap=cfg.get("cmap", "viridis"),
+                    vmin=cfg.get("vmin", 0.0),
+                    vmax=cfg.get("vmax", 0.4),
+                )
+                ax.set_title("SC Corr BE")
+                ax.set_xlabel("Time (fs)")
+                ax.set_ylabel("BE (eV)")
                 self.figure.colorbar(im, ax=ax)
                 self._plot_artists[plot_name] = {"ax": ax, "im": im}
                 
