@@ -4,6 +4,7 @@ import glob
 import json
 import logging
 import re
+import threading
 import numpy as np
 import pandas as pd
 
@@ -20,7 +21,8 @@ from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QPushButton, QFileDialog,
     QVBoxLayout, QHBoxLayout, QWidget, QMessageBox,
     QLabel, QDoubleSpinBox, QProgressBar, QSpinBox,
-    QComboBox, QCheckBox, QGroupBox, QGridLayout, QDockWidget
+    QComboBox, QCheckBox, QGroupBox, QGridLayout, QDockWidget,
+    QDialog, QDialogButtonBox, QFormLayout
 )
 from PyQt5.QtCore import Qt, QThread, pyqtSignal, QTimer
 
@@ -355,12 +357,16 @@ class FastLoader(QThread):
 class AnalysisWorker(QThread):
     progress = pyqtSignal(int)
     finished = pyqtSignal(dict)
+    request_scan_params = pyqtSignal()
 
     def __init__(self, folder, data, params):
         super().__init__()
         self.folder = folder
         self.data = data
         self.params = params
+        self._scan_npts = None
+        self._scan_stepsize_fs = None
+        self._scan_params_event = threading.Event()
 
     @staticmethod
     def fold_twoway(M, pts):
@@ -452,9 +458,20 @@ class AnalysisWorker(QThread):
             
             # Fallback if log.dat not found
             if Npts is None:
-                logger.warning("Using fallback: Npts=1, approximating t_fs")
-                Npts = 1
-                t_fs = np.arange(n_stop - n_start)
+                logger.warning("log.dat not found — requesting user input for scan parameters")
+                self._scan_params_event.clear()
+                self.request_scan_params.emit()
+                self._scan_params_event.wait()  # blocks until main thread sets the values
+
+                if self._scan_npts is not None and self._scan_stepsize_fs is not None:
+                    Npts = int(self._scan_npts)
+                    stepsize = float(self._scan_stepsize_fs)
+                    t_fs = np.arange(Npts) * stepsize
+                    logger.info(f"User provided: Npts={Npts}, stepsize={stepsize} fs")
+                else:
+                    # User cancelled or provided invalid input — abort
+                    self.finished.emit({"error": "log.dat not found and no scan parameters provided. Analysis cancelled."})
+                    return
             else:
                 logger.info(f"N points in the scan: {Npts}")
                 logger.info(f"Scan range: {np.min(t_fs):.1f} fs to {np.max(t_fs):.1f} fs")
@@ -1356,6 +1373,7 @@ class AnalysisWindow(QMainWindow):
         self._analysis_worker = AnalysisWorker(self.folder, self.data, params)
         self._analysis_worker.progress.connect(lambda p: self.status.setText(f"Analysis: {p}%"))
         self._analysis_worker.finished.connect(self._on_analysis_finished)
+        self._analysis_worker.request_scan_params.connect(self._on_request_scan_params)
         self._analysis_worker.start()
     
     def refit_only(self):
@@ -1664,6 +1682,39 @@ class AnalysisWindow(QMainWindow):
 
         self._create_or_update_artists(result)
 
+    def _on_request_scan_params(self):
+        """Called from main thread when worker needs scan parameters (log.dat not found)"""
+        dialog = QDialog(self)
+        dialog.setWindowTitle("log.dat not found — Enter Scan Parameters")
+        layout = QFormLayout(dialog)
+
+        npts_spin = QSpinBox()
+        npts_spin.setRange(1, 1000000)
+        npts_spin.setValue(100)
+        npts_spin.setToolTip("Number of TOF files per scan (Npts)")
+        layout.addRow("Scan length (files per scan):", npts_spin)
+
+        stepsize_spin = QDoubleSpinBox()
+        stepsize_spin.setRange(-1e9, 1e9)
+        stepsize_spin.setDecimals(3)
+        stepsize_spin.setValue(10.0)
+        stepsize_spin.setToolTip("Time step between scan points in femtoseconds")
+        layout.addRow("Step size (fs):", stepsize_spin)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        layout.addRow(buttons)
+
+        if dialog.exec_() == QDialog.Accepted:
+            self._analysis_worker._scan_npts = npts_spin.value()
+            self._analysis_worker._scan_stepsize_fs = stepsize_spin.value()
+        else:
+            self._analysis_worker._scan_npts = None
+            self._analysis_worker._scan_stepsize_fs = None
+
+        self._analysis_worker._scan_params_event.set()  # unblock worker thread
+
     def _create_or_update_artists(self, result):
         """Create or update all plot artists"""
         # Save existing axis limits before clearing
@@ -1771,9 +1822,11 @@ class AnalysisWindow(QMainWindow):
                     cal = CalibrationConstants()
                     bin_to_ns = bool(GLOBAL_SETTINGS["data"].get("BIN_TO_NS_FLAG", False))
                     points_per_ns = _safe_float(GLOBAL_SETTINGS["data"].get("POINTS_PER_NS", 1.0 / 0.8))
-                    photon_energy = self.main_window.spin_eph.value() if self.main_window is not None else 29.6
-                    be_axis = tof_to_binding_energy(self.TOF, photon_energy, cal,
-                                                    bin_to_ns=bin_to_ns, points_per_ns=points_per_ns)
+                    photon_energy = self.main_window.spin_eph.value() if self.main_window is not None else 20.3
+                    # Convert TOF axis to ns explicitly before BE conversion
+                    tof_ns_axis = self.TOF / points_per_ns if bin_to_ns and points_per_ns > 0 else self.TOF.astype(float)
+                    be_axis = tof_to_binding_energy(tof_ns_axis, photon_energy, cal,
+                                                    bin_to_ns=False, points_per_ns=None)
                     be_valid = be_axis[np.isfinite(be_axis)]
                     be_min = float(np.min(be_valid)) if be_valid.size else 0.0
                     be_max = float(np.max(be_valid)) if be_valid.size else 1.0
@@ -2388,7 +2441,7 @@ class TOFExplorer(QMainWindow):
         self.spin_eph = QDoubleSpinBox()
         self.spin_eph.setRange(0, 100)
         self.spin_eph.setDecimals(3)
-        self.spin_eph.setValue(29.6)
+        self.spin_eph.setValue(20.3)
         self.spin_eph.setKeyboardTracking(False)  # Only update on Enter/focus loss
         self.spin_eph.editingFinished.connect(self._on_photon_energy_changed)
         dg.addWidget(QLabel("Photon E (eV):"))
@@ -2583,7 +2636,7 @@ class TOFExplorer(QMainWindow):
             )
         if self._axis_mode() == "BE":
             return tof_to_binding_energy(
-                tof, _safe_float(self.spin_eph.value(), 29.6), cal,
+                tof, _safe_float(self.spin_eph.value(), 20.3), cal,
                 bin_to_ns=bool(GLOBAL_SETTINGS["data"].get("BIN_TO_NS_FLAG", False)),
                 points_per_ns=_safe_float(GLOBAL_SETTINGS["data"].get("POINTS_PER_NS", 1.0/0.8))
             )
