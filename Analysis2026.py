@@ -1820,12 +1820,9 @@ class AnalysisWindow(QMainWindow):
                     
                 elif plot_name == "SC Corr BE":
                     cal = CalibrationConstants()
-                    bin_to_ns = bool(GLOBAL_SETTINGS["data"].get("BIN_TO_NS_FLAG", False))
-                    points_per_ns = _safe_float(GLOBAL_SETTINGS["data"].get("POINTS_PER_NS", 1.0 / 0.8))
                     photon_energy = self.main_window.spin_eph.value() if self.main_window is not None else 20.3
-                    # Convert TOF axis to ns explicitly before BE conversion
-                    tof_ns_axis = self.TOF / points_per_ns if bin_to_ns and points_per_ns > 0 else self.TOF.astype(float)
-                    be_axis = tof_to_binding_energy(tof_ns_axis, photon_energy, cal,
+                    # self.TOF is already in nanoseconds — pass bin_to_ns=False always
+                    be_axis = tof_to_binding_energy(self.TOF, photon_energy, cal,
                                                     bin_to_ns=False, points_per_ns=None)
                     be_valid = be_axis[np.isfinite(be_axis)]
                     be_min = float(np.min(be_valid)) if be_valid.size else 0.0
@@ -2629,16 +2626,11 @@ class TOFExplorer(QMainWindow):
     def _compute_axis(self, tof):
         cal = CalibrationConstants()
         if self._axis_mode() == "KE":
-            return tof_to_ke(
-                tof, cal,
-                bin_to_ns=bool(GLOBAL_SETTINGS["data"].get("BIN_TO_NS_FLAG", False)),
-                points_per_ns=_safe_float(GLOBAL_SETTINGS["data"].get("POINTS_PER_NS", 1.0/0.8))
-            )
+            return tof_to_ke(tof, cal, bin_to_ns=False, points_per_ns=None)
         if self._axis_mode() == "BE":
             return tof_to_binding_energy(
                 tof, _safe_float(self.spin_eph.value(), 20.3), cal,
-                bin_to_ns=bool(GLOBAL_SETTINGS["data"].get("BIN_TO_NS_FLAG", False)),
-                points_per_ns=_safe_float(GLOBAL_SETTINGS["data"].get("POINTS_PER_NS", 1.0/0.8))
+                bin_to_ns=False, points_per_ns=None
             )
         return tof
 
